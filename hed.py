@@ -23,8 +23,8 @@ SCOPES = [
 
 year_options = ["Select Year"] + [str(y) for y in range(2000, datetime.now().year + 1)]
 
-credentials = service_account.Credentials.from_service_account_file(
-    r"D:\Propelld Work\domestic-higher-education-c26d6d65812f.json",
+credentials = service_account.Credentials.from_service_account_info(
+    st.secrets["gcp_service_account"],
     scopes=SCOPES
 )
 
@@ -657,4 +657,5 @@ if c1.button("⬅ Back") and st.session_state.step>1:
 
 if c2.button("Next ➡") and st.session_state.step<6:
     st.session_state.step+=1
+
     st.rerun()
