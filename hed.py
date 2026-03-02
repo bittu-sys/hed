@@ -182,7 +182,7 @@ def get_section_status(step):
 
     # -------- STEP 2 EDUCATION --------
     elif step == 2:
-        required = [
+        required_fields = [
             d.get("school_10"),
             d.get("marks_10"),
             d.get("school_12"),
@@ -190,11 +190,20 @@ def get_section_status(step):
             d.get("college_grad"),
             d.get("marks_grad")
         ]
-        filled = sum(1 for x in required if x)
 
-        if filled == 0:
+        required_docs = [
+            d.get("doc_10"),
+            d.get("doc_12"),
+            d.get("doc_grad")
+        ]
+
+        total_required = len(required_fields) + len(required_docs)
+        total_filled = sum(1 for x in required_fields if x) + \
+                       sum(1 for x in required_docs if x)
+
+        if total_filled == 0:
             return "empty"
-        elif filled < len(required):
+        elif total_filled < total_required:
             return "partial"
         else:
             return "complete"
@@ -202,22 +211,34 @@ def get_section_status(step):
     # -------- STEP 3 SEMESTER --------
     elif step == 3:
         sem = d.get("semester_data", [])
+
         if not sem:
             return "empty"
 
-        total = len(sem)
-        filled = sum(1 for s in sem if s.get("sem_name") and s.get("marks"))
+        total_required = len(sem) * 2  # name + doc
+        filled = 0
+
+        for s in sem:
+            if s.get("sem_name"):
+                filled += 1
+            if s.get("doc"):
+                filled += 1
 
         if filled == 0:
             return "empty"
-        elif filled < total:
+        elif filled < total_required:
             return "partial"
         else:
             return "complete"
 
     # -------- STEP 4 INTERNSHIP --------
     elif step == 4:
-        required = [d.get("intern_company"), d.get("intern_role")]
+        required = [
+            d.get("intern_company"),
+            d.get("intern_role"),
+            d.get("intern_doc")
+        ]
+
         filled = sum(1 for x in required if x)
 
         if filled == 0:
@@ -231,41 +252,45 @@ def get_section_status(step):
     elif step == 5:
         placed = d.get("Placed")
 
-        # Default red when nothing selected
         if not placed:
             return "empty"
 
-        # If user selected No → amber
         if placed == "No":
             return "partial"
 
-        # If Yes selected
         if placed == "Yes":
-            required = [
+            required_fields = [
                 d.get("company"),
-                d.get("role"),
-                d.get("offer_doc"),
-                d.get("resume_doc")
+                d.get("role")
             ]
 
-            filled = sum(1 for x in required if x)
+            required_docs = [
+                d.get("offer_doc"),
+                d.get("resume_doc"),
+                d.get("address_doc")
+            ]
 
-            if filled == 0:
+            total_required = len(required_fields) + len(required_docs)
+            total_filled = sum(1 for x in required_fields if x) + \
+                           sum(1 for x in required_docs if x)
+
+            if total_filled == 0:
                 return "empty"
-            elif filled < len(required):
+            elif total_filled < total_required:
                 return "partial"
             else:
                 return "complete"
 
     # -------- STEP 6 REVIEW --------
     elif step == 6:
-     statuses = [get_section_status(i) for i in range(1, 6)]
+        statuses = [get_section_status(i) for i in range(1, 6)]
 
-    if all(s == "complete" for s in statuses):
-        return "complete"
-
-    if any(s != "empty" for s in statuses):
-        return "partial"
+        if all(s == "complete" for s in statuses):
+            return "complete"
+        elif any(s != "empty" for s in statuses):
+            return "partial"
+        else:
+            return "empty"
 
     return "empty"
 
@@ -747,6 +772,7 @@ if c2.button("Next ➡") and st.session_state.step<6:
     st.session_state.step+=1
 
     st.rerun()
+
 
 
 
