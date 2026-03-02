@@ -168,24 +168,82 @@ steps = ["Basic Info","Education","Semester","Internship","Placement","Review"]
 def get_section_status(step):
     d = st.session_state.student_data
 
+    # -------- STEP 1 BASIC --------
     if step == 1:
-        return "complete" if d.get("Name") and d.get("Mobile") else "incomplete"
+        required = [d.get("Name"), d.get("Mobile"), d.get("Email")]
+        filled = sum([1 for x in required if x])
 
+        if filled == 0:
+            return "empty"
+        elif filled < len(required):
+            return "partial"
+        else:
+            return "complete"
+
+    # -------- STEP 2 EDUCATION --------
     if step == 2:
-        return "complete" if d.get("school_10") and d.get("school_12") else "incomplete"
+        required = [
+            d.get("school_10"),
+            d.get("marks_10"),
+            d.get("school_12"),
+            d.get("marks_12"),
+            d.get("college_grad"),
+            d.get("marks_grad")
+        ]
+        filled = sum([1 for x in required if x])
 
+        if filled == 0:
+            return "empty"
+        elif filled < len(required):
+            return "partial"
+        else:
+            return "complete"
+
+    # -------- STEP 3 SEMESTER --------
     if step == 3:
         sem = d.get("semester_data", [])
-        return "complete" if sem else "incomplete"
+        if not sem:
+            return "empty"
 
+        total = len(sem)
+        filled = sum([1 for s in sem if s.get("sem_name") and s.get("marks")])
+
+        if filled == 0:
+            return "empty"
+        elif filled < total:
+            return "partial"
+        else:
+            return "complete"
+
+    # -------- STEP 4 INTERNSHIP --------
     if step == 4:
-        return "complete" if d.get("intern_company") else "incomplete"
+        required = [d.get("intern_company"), d.get("intern_role")]
+        filled = sum([1 for x in required if x])
 
+        if filled == 0:
+            return "empty"
+        elif filled < len(required):
+            return "partial"
+        else:
+            return "complete"
+
+    # -------- STEP 5 PLACEMENT --------
     if step == 5:
-        return "complete"
+        if d.get("Placed") == "Yes":
+            required = [d.get("company"), d.get("role")]
+            filled = sum([1 for x in required if x])
 
-    return "incomplete"
+            if filled == 0:
+                return "empty"
+            elif filled < len(required):
+                return "partial"
+            else:
+                return "complete"
+        else:
+            return "complete"
 
+    return "empty"
+    
 def calculate_completion():
     done = 0
     for i in range(1,6):
@@ -199,7 +257,12 @@ cols = st.columns(6)
 
 for i in range(1,7):
     status = get_section_status(i)
-    color = "#28a745" if status=="complete" else "#ffc107"
+    if status == "complete":
+    color = "#28a745"      # Green
+elif status == "partial":
+    color = "#ffc107"      # Amber
+else:
+    color = "#dc3545"      # Red
 
     if cols[i-1].button(steps[i-1]):
         st.session_state.step = i
@@ -659,3 +722,4 @@ if c2.button("Next ➡") and st.session_state.step<6:
     st.session_state.step+=1
 
     st.rerun()
+
