@@ -171,7 +171,7 @@ def get_section_status(step):
     # -------- STEP 1 BASIC --------
     if step == 1:
         required = [d.get("Name"), d.get("Mobile"), d.get("Email")]
-        filled = sum([1 for x in required if x])
+        filled = sum(1 for x in required if x)
 
         if filled == 0:
             return "empty"
@@ -181,7 +181,7 @@ def get_section_status(step):
             return "complete"
 
     # -------- STEP 2 EDUCATION --------
-    if step == 2:
+    elif step == 2:
         required = [
             d.get("school_10"),
             d.get("marks_10"),
@@ -190,7 +190,7 @@ def get_section_status(step):
             d.get("college_grad"),
             d.get("marks_grad")
         ]
-        filled = sum([1 for x in required if x])
+        filled = sum(1 for x in required if x)
 
         if filled == 0:
             return "empty"
@@ -200,13 +200,13 @@ def get_section_status(step):
             return "complete"
 
     # -------- STEP 3 SEMESTER --------
-    if step == 3:
+    elif step == 3:
         sem = d.get("semester_data", [])
         if not sem:
             return "empty"
 
         total = len(sem)
-        filled = sum([1 for s in sem if s.get("sem_name") and s.get("marks")])
+        filled = sum(1 for s in sem if s.get("sem_name") and s.get("marks"))
 
         if filled == 0:
             return "empty"
@@ -216,9 +216,9 @@ def get_section_status(step):
             return "complete"
 
     # -------- STEP 4 INTERNSHIP --------
-    if step == 4:
+    elif step == 4:
         required = [d.get("intern_company"), d.get("intern_role")]
-        filled = sum([1 for x in required if x])
+        filled = sum(1 for x in required if x)
 
         if filled == 0:
             return "empty"
@@ -228,10 +228,27 @@ def get_section_status(step):
             return "complete"
 
     # -------- STEP 5 PLACEMENT --------
-    if step == 5:
-        if d.get("Placed") == "Yes":
-            required = [d.get("company"), d.get("role")]
-            filled = sum([1 for x in required if x])
+    elif step == 5:
+        placed = d.get("Placed")
+
+        # Default red when nothing selected
+        if not placed:
+            return "empty"
+
+        # If user selected No → amber
+        if placed == "No":
+            return "partial"
+
+        # If Yes selected
+        if placed == "Yes":
+            required = [
+                d.get("company"),
+                d.get("role"),
+                d.get("offer_doc"),
+                d.get("resume_doc")
+            ]
+
+            filled = sum(1 for x in required if x)
 
             if filled == 0:
                 return "empty"
@@ -239,18 +256,26 @@ def get_section_status(step):
                 return "partial"
             else:
                 return "complete"
-        else:
-            return "complete"
+
+    # -------- STEP 6 REVIEW --------
+    elif step == 6:
+     statuses = [get_section_status(i) for i in range(1, 6)]
+
+    if all(s == "complete" for s in statuses):
+        return "complete"
+
+    if any(s != "empty" for s in statuses):
+        return "partial"
 
     return "empty"
-    
+
 def calculate_completion():
     done = 0
     for i in range(1,6):
         if get_section_status(i) == "complete":
             done += 1
     return int((done/5)*100)
-
+    
 # ================= NAVIGATION =================
 
 cols = st.columns(6)
@@ -722,5 +747,6 @@ if c2.button("Next ➡") and st.session_state.step<6:
     st.session_state.step+=1
 
     st.rerun()
+
 
 
