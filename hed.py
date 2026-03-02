@@ -258,11 +258,11 @@ cols = st.columns(6)
 for i in range(1,7):
     status = get_section_status(i)
     if status == "complete":
-    color = "#28a745"      # Green
-elif status == "partial":
-    color = "#ffc107"      # Amber
-else:
-    color = "#dc3545"      # Red
+      color = "#28a745"      # Green
+    elif status == "partial":
+      color = "#ffc107"      # Amber
+    else:
+     color = "#dc3545"      # Red
 
     if cols[i-1].button(steps[i-1]):
         st.session_state.step = i
@@ -722,4 +722,5 @@ if c2.button("Next ➡") and st.session_state.step<6:
     st.session_state.step+=1
 
     st.rerun()
+
 
