@@ -107,12 +107,35 @@ def upload_file_to_drive(uploaded_file, folder_id, filename):
 
 # ================= SAVE TO SHEET FUNCTION =================
 
+def calculate_form_status(data_dict):
+
+    statuses = [get_section_status(i) for i in range(1, 6)]
+
+    # Minimum 1 semester rule
+    semesters = data_dict.get("semester_data", [])
+    semester_filled = any(
+        sem.get("sem_name") and sem.get("doc")
+        for sem in semesters
+    )
+
+    if not semester_filled:
+        return "PARTIAL"
+
+    if all(s == "complete" for s in statuses):
+        return "COMPLETE"
+
+    if any(s != "empty" for s in statuses):
+        return "PARTIAL"
+
+    return "EMPTY"
+
 def save_to_sheet(data_dict, folder_link, uploaded_links):
 
     semester_summary = ""
     for sem in data_dict.get("semester_data", []):
         semester_summary += f"{sem.get('sem_name','')} - {sem.get('marks','')} | "
 
+    form_status = calculate_form_status(data_dict)
     values = [[
         data_dict.get("Application_ID",""),
         data_dict.get("Name",""),
@@ -146,6 +169,7 @@ def save_to_sheet(data_dict, folder_link, uploaded_links):
         uploaded_links.get("offer_doc",""),
         uploaded_links.get("address_doc",""),
         uploaded_links.get("resume_doc",""),
+        form_status,
 
         datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     ]]
@@ -772,6 +796,7 @@ if c2.button("Next ➡") and st.session_state.step<6:
     st.session_state.step+=1
 
     st.rerun()
+
 
 
 
