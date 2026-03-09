@@ -104,7 +104,7 @@ def upload_file_to_drive(uploaded_file, folder_id, filename):
     media = MediaIoBaseUpload(
         uploaded_file,
         mimetype=uploaded_file.type,
-        resumable=True
+        resumable=False
     )
 
     file = drive_service.files().create(
@@ -838,6 +838,7 @@ if c2.button("Next ➡") and st.session_state.step<6:
     st.session_state.step+=1
 
     st.rerun()
+
 
 
 
