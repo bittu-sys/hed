@@ -51,7 +51,10 @@ if "student_data" not in st.session_state:
     st.session_state.student_data = {}
 
 if "semester_count" not in st.session_state:
-    st.session_state.semester_count = 2
+    st.session_state.semester_count = 
+
+if "submitted" not in st.session_state:
+    st.session_state.submitted = False
 
 # ================= FETCH FUNCTION =================
 
@@ -794,7 +797,10 @@ elif st.session_state.step == 6:
     st.markdown("---")
 
     # -------- FINAL SUBMIT --------
-    if st.button("✅ Final Submit"):
+    if st.session_state.submitted:
+      st.warning("Application already submitted")
+
+    elif st.button("✅ Final Submit"):
 
         try:
             folder_name = f"{data.get('Application_ID','')}_{data.get('Name','')}"
@@ -822,7 +828,7 @@ elif st.session_state.step == 6:
             save_to_sheet(data, folder_link, uploaded_links)
 
             st.success("🎉 Application Submitted Successfully!")
-            st.write("Drive Folder:", folder_link)
+            st.session_state.submitted = True
 
         except Exception as e:
             st.error(f"Submission Failed: {e}")
@@ -838,6 +844,7 @@ if c2.button("Next ➡") and st.session_state.step<6:
     st.session_state.step+=1
 
     st.rerun()
+
 
 
 
