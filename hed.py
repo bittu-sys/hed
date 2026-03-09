@@ -51,7 +51,7 @@ if "student_data" not in st.session_state:
     st.session_state.student_data = {}
 
 if "semester_count" not in st.session_state:
-    st.session_state.semester_count = 
+    st.session_state.semester_count = 2
 
 if "submitted" not in st.session_state:
     st.session_state.submitted = False
@@ -844,6 +844,7 @@ if c2.button("Next ➡") and st.session_state.step<6:
     st.session_state.step+=1
 
     st.rerun()
+
 
 
 
