@@ -137,43 +137,65 @@ def save_to_sheet(data_dict, folder_link, uploaded_links):
 
     form_status = calculate_form_status(data_dict)
     values = [[
-        data_dict.get("Application_ID",""),
-        data_dict.get("Name",""),
-        data_dict.get("Mobile",""),
-        data_dict.get("Email",""),
-        data_dict.get("LoanAmount",""),
-        data_dict.get("CourseName",""),
-        data_dict.get("CurrentState",""),
+data_dict.get("Application_ID",""),
+data_dict.get("Name",""),
+data_dict.get("Mobile",""),
+data_dict.get("Email",""),
+data_dict.get("LoanAmount",""),
+data_dict.get("CourseName",""),
+data_dict.get("CurrentState",""),
 
-        data_dict.get("school_10",""),
-        data_dict.get("marks_10",""),
-        data_dict.get("school_12",""),
-        data_dict.get("marks_12",""),
-        data_dict.get("college_grad",""),
-        data_dict.get("marks_grad",""),
+# 10th
+data_dict.get("school_10",""),
+data_dict.get("board_10",""),
+data_dict.get("year_10",""),
+data_dict.get("marks_10",""),
 
-        data_dict.get("exam_name",""),
-        data_dict.get("exam_score",""),
+# 12th
+data_dict.get("school_12",""),
+data_dict.get("board_12",""),
+data_dict.get("year_12",""),
+data_dict.get("marks_12",""),
 
-        semester_summary,
-        data_dict.get("intern_company",""),
-        data_dict.get("Placed",""),
+# Graduation
+data_dict.get("college_grad",""),
+data_dict.get("university_grad",""),
+data_dict.get("year_grad",""),
+data_dict.get("marks_grad",""),
 
-        folder_link,
+# Exam
+data_dict.get("exam_name",""),
+data_dict.get("exam_year",""),
+data_dict.get("exam_score",""),
+data_dict.get("exam_rank",""),
 
-        uploaded_links.get("doc_10",""),
-        uploaded_links.get("doc_12",""),
-        uploaded_links.get("doc_grad",""),
-        uploaded_links.get("exam_doc",""),
-        uploaded_links.get("intern_doc",""),
-        uploaded_links.get("offer_doc",""),
-        uploaded_links.get("address_doc",""),
-        uploaded_links.get("resume_doc",""),
-        form_status,
+# Semester
+semester_summary,
 
-        datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    ]]
+# Internship
+data_dict.get("intern_company",""),
+data_dict.get("intern_role",""),
+data_dict.get("intern_duration",""),
 
+# Placement
+data_dict.get("Placed",""),
+data_dict.get("company",""),
+data_dict.get("role",""),
+
+folder_link,
+
+uploaded_links.get("doc_10",""),
+uploaded_links.get("doc_12",""),
+uploaded_links.get("doc_grad",""),
+uploaded_links.get("exam_doc",""),
+uploaded_links.get("intern_doc",""),
+uploaded_links.get("offer_doc",""),
+uploaded_links.get("address_doc",""),
+uploaded_links.get("resume_doc",""),
+
+form_status,
+datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+]]
     sheet_service.spreadsheets().values().append(
         spreadsheetId=SHEET_ID,
         range=f"{SAVE_TAB}!A:Z",
@@ -796,6 +818,7 @@ if c2.button("Next ➡") and st.session_state.step<6:
     st.session_state.step+=1
 
     st.rerun()
+
 
 
 
