@@ -7,6 +7,17 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
 
+# ================= FILE SIZE LIMIT =================
+MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
+
+def validate_file(uploaded_file):
+    if uploaded_file is not None:
+        if uploaded_file.size > MAX_FILE_SIZE:
+            st.error("❌ File size must be less than 5MB")
+            return None
+        return uploaded_file
+    return None
+
 # ================= CONFIG =================
 
 FOLDER_ID = "0AKQoF-VACGZsUk9PVA"
@@ -818,6 +829,7 @@ if c2.button("Next ➡") and st.session_state.step<6:
     st.session_state.step+=1
 
     st.rerun()
+
 
 
 
