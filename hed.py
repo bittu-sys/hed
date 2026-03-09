@@ -440,6 +440,7 @@ elif st.session_state.step == 2:
     )
 
     doc_10_new = st.file_uploader("Upload 10th Marksheet", key="doc_10")
+    doc_10_new = validate_file(doc_10_new)
 
     if doc_10_new is not None:
      st.session_state.student_data["doc_10"] = doc_10_new
@@ -473,6 +474,7 @@ elif st.session_state.step == 2:
     )
 
     doc_12_new = st.file_uploader("Upload 12th Marksheet", key="doc_12")
+    doc_12_new = validate_file(doc_12_new)
 
     if doc_12_new is not None:
      st.session_state.student_data["doc_12"] = doc_12_new
@@ -506,6 +508,7 @@ elif st.session_state.step == 2:
     )
 
     doc_grad_new = st.file_uploader("Upload Graduation Marksheet", key="doc_grad")
+    doc_grad_new = validate_file(doc_grad_new)
 
     if doc_grad_new is not None:
      st.session_state.student_data["doc_grad"] = doc_grad_new
@@ -539,6 +542,7 @@ elif st.session_state.step == 2:
     )
 
     exam_doc_new = st.file_uploader("Upload Scorecard", key="exam_doc")
+    exam_doc_new = validate_file(exam_doc_new)
 
     if exam_doc_new is not None:
      st.session_state.student_data["exam_doc"] = exam_doc_new
@@ -603,6 +607,8 @@ elif st.session_state.step == 3:
             key=f"sem_doc_{i}"
         )
 
+        sem_doc = validate_file(sem_doc)
+
         updated_semesters.append({
             "sem_no": i,
             "sem_name": sem_name,
@@ -648,6 +654,7 @@ elif st.session_state.step == 4:
     )
 
     intern_doc_new = st.file_uploader("Internship Certificate", key="intern_doc")
+    intern_doc_new = validate_file(intern_doc_new)
 
     if intern_doc_new is not None:
      st.session_state.student_data["intern_doc"] = intern_doc_new
@@ -691,6 +698,7 @@ elif st.session_state.step == 5:
 
         # ===== OFFER LETTER =====
         offer_new = st.file_uploader("Offer Letter", key="offer_doc")
+        offer_new = validate_file(offer_new)
 
         if offer_new is not None:
             st.session_state.student_data["offer_doc"] = offer_new
@@ -702,6 +710,7 @@ elif st.session_state.step == 5:
 
         # ===== ADDRESS PROOF =====
         address_new = st.file_uploader("Address Proof", key="address_doc")
+        address_new = validate_file(address_new)
 
         if address_new is not None:
             st.session_state.student_data["address_doc"] = address_new
@@ -713,6 +722,7 @@ elif st.session_state.step == 5:
 
         # ===== RESUME =====
         resume_new = st.file_uploader("Upload Resume", key="resume_doc")
+        resume_new = validate_file(resume_new)
 
         if resume_new is not None:
             st.session_state.student_data["resume_doc"] = resume_new
@@ -726,7 +736,6 @@ elif st.session_state.step == 5:
             "company": company,
             "role": role
         })
-
 # ================= STEP 6 =================
 elif st.session_state.step == 6:
 
@@ -829,6 +838,7 @@ if c2.button("Next ➡") and st.session_state.step<6:
     st.session_state.step+=1
 
     st.rerun()
+
 
 
 
