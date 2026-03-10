@@ -150,7 +150,7 @@ def calculate_form_status(data_dict):
     # Minimum 1 semester rule
     semesters = data_dict.get("semester_data", [])
     semester_filled = any(
-        sem.get("sem_name") and sem.get("doc")
+        sem.get("college") and sem.get("doc")
         for sem in semesters
     )
 
@@ -179,7 +179,6 @@ def save_to_sheet(data_dict, folder_link, uploaded_links):
             sem = semesters[i]
 
             sem_values.extend([
-                sem.get("sem_name",""),
                 sem.get("college",""),
                 sem.get("course",""),
                 clean_value(sem.get("year","")),
@@ -247,6 +246,7 @@ def save_to_sheet(data_dict, folder_link, uploaded_links):
     data_dict.get("company",""),
     data_dict.get("role",""),
     data_dict.get("ctc",""),
+    data_dict.get("current_address",""),
     clean_value(data_dict.get("country","")),
 
     folder_link,
@@ -724,12 +724,6 @@ elif st.session_state.step == 3:
             key=f"sem_course_{i}"
         )
 
-        sem_name = st.text_input(
-            f"Semester Name (Semester {i})",
-            value=existing.get("sem_name",""),
-            key=f"sem_name_{i}"
-        )
-
         year_sem = st.selectbox(
             f"Year (Semester {i})",
             year_options,
@@ -768,7 +762,6 @@ elif st.session_state.step == 3:
             "sem_no": i,
             "college": college_name,
             "course": course_name,
-            "sem_name": sem_name,
             "year": year_sem,
             "marks_type": marks_type_sem,
             "marks": sem_marks,
@@ -870,6 +863,11 @@ elif st.session_state.step == 5:
             value=st.session_state.student_data.get("ctc","")
         )
 
+        current_address = st.text_area(
+            "Current Address",
+            value=st.session_state.student_data.get("current_address","")
+        )
+
         country = st.selectbox(
             "Country of Job",
             country_list,
@@ -918,6 +916,7 @@ elif st.session_state.step == 5:
             "company": company,
             "role": role,
             "ctc": ctc,
+            "current_address": current_address,
             "country": country
         })
 
@@ -954,7 +953,7 @@ elif st.session_state.step == 6:
     st.markdown("### 📚 Semester Details")
 
     for sem in data.get("semester_data", []):
-        st.write(f"{sem.get('sem_name','')} - {sem.get('marks','')}")
+        st.write(f"{sem.get('college','')} - {sem.get('marks','')}")
 
     st.markdown("---")
 
