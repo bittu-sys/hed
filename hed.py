@@ -52,7 +52,7 @@ country_list = [
 ]
 
 credentials = service_account.Credentials.from_service_account_file(
-    r"D:\Propelld Work\domestic-higher-education-c26d6d65812f.json",
+    "credentials.json",
     scopes=SCOPES
 )
 
@@ -1024,3 +1024,4 @@ if c1.button("⬅ Back") and st.session_state.step>1:
 if c2.button("Next ➡") and st.session_state.step<6:
     st.session_state.step+=1
     st.rerun()
+
