@@ -34,8 +34,25 @@ SCOPES = [
 
 year_options = ["Select Year"] + [str(y) for y in range(2000, datetime.now().year + 1)]
 
-credentials = service_account.Credentials.from_service_account_info(
-    st.secrets["gcp_service_account"],
+# ================= DROPDOWN OPTIONS =================
+
+marks_type_options = ["Select", "Percentage (%)", "CGPA", "Actual Marks"]
+
+states_list = [
+"Select State","Andhra Pradesh","Arunachal Pradesh","Assam","Bihar","Chhattisgarh",
+"Goa","Gujarat","Haryana","Himachal Pradesh","Jharkhand","Karnataka","Kerala",
+"Madhya Pradesh","Maharashtra","Manipur","Meghalaya","Mizoram","Nagaland",
+"Odisha","Punjab","Rajasthan","Sikkim","Tamil Nadu","Telangana","Tripura",
+"Uttar Pradesh","Uttarakhand","West Bengal"
+]
+
+country_list = [
+"Select Country","India","USA","UK","Canada","Australia","Germany","France",
+"Singapore","UAE","Switzerland","Netherlands","Denmark","New Zealand","Other"
+]
+
+credentials = service_account.Credentials.from_service_account_file(
+    r"D:\Propelld Work\domestic-higher-education-c26d6d65812f.json",
     scopes=SCOPES
 )
 
@@ -54,7 +71,7 @@ if "semester_count" not in st.session_state:
     st.session_state.semester_count = 2
 
 if "submitted" not in st.session_state:
-    st.session_state.submitted = False
+    st.session_state.submitted = False    
 
 # ================= FETCH FUNCTION =================
 
@@ -76,7 +93,7 @@ def fetch_application_data(app_id):
                 "Email": row[3],
                 "LoanAmount": row[4],
                 "CourseName": row[5],
-                "CurrentState": row[6]
+                "CurrentLoanStatus": row[6]
             }
 
     return None
@@ -120,6 +137,10 @@ def upload_file_to_drive(uploaded_file, folder_id, filename):
     return f"https://drive.google.com/file/d/{file.get('id')}/view"
 
 # ================= SAVE TO SHEET FUNCTION =================
+def clean_value(val):
+    if val in ["Select", "Select State", "Select Year", "Select Country"]:
+        return ""
+    return val
 
 def calculate_form_status(data_dict):
 
@@ -145,74 +166,117 @@ def calculate_form_status(data_dict):
 
 def save_to_sheet(data_dict, folder_link, uploaded_links):
 
-    semester_summary = ""
-    for sem in data_dict.get("semester_data", []):
-        semester_summary += f"{sem.get('sem_name','')} - {sem.get('marks','')} | "
+    # ===== SEMESTER DATA =====
+    semesters = data_dict.get("semester_data", [])
+
+    sem_values = []
+
+    for i in range(8):
+
+        if i < len(semesters):
+
+            sem = semesters[i]
+
+            sem_values.extend([
+                sem.get("sem_name",""),
+                sem.get("college",""),
+                sem.get("course",""),
+                clean_value(sem.get("year","")),
+                clean_value(sem.get("marks_type","")),
+                sem.get("marks",""),
+                clean_value(sem.get("state",""))
+            ])
+
+        else:
+            sem_values.extend(["","","","","","",""])
+
 
     form_status = calculate_form_status(data_dict)
+
     values = [[
-data_dict.get("Application_ID",""),
-data_dict.get("Name",""),
-data_dict.get("Mobile",""),
-data_dict.get("Email",""),
-data_dict.get("LoanAmount",""),
-data_dict.get("CourseName",""),
-data_dict.get("CurrentState",""),
+    data_dict.get("Application_ID",""),
+    data_dict.get("Name",""),
+    data_dict.get("Mobile",""),
+    data_dict.get("Email",""),
+    data_dict.get("LoanAmount",""),
+    data_dict.get("CourseName",""),
+    data_dict.get("CurrentLoanStatus",""),
 
-# 10th
-data_dict.get("school_10",""),
-data_dict.get("board_10",""),
-data_dict.get("year_10",""),
-data_dict.get("marks_10",""),
+    # 10th
+    data_dict.get("school_10",""),
+    data_dict.get("board_10",""),
+    clean_value(data_dict.get("state_10","")),
+    clean_value(data_dict.get("year_10","")),
+    clean_value(data_dict.get("marks_type_10","")),
+    data_dict.get("marks_10",""),
 
-# 12th
-data_dict.get("school_12",""),
-data_dict.get("board_12",""),
-data_dict.get("year_12",""),
-data_dict.get("marks_12",""),
+    # 12th
+    data_dict.get("school_12",""),
+    data_dict.get("board_12",""),
+    clean_value(data_dict.get("state_12","")),
+    clean_value(data_dict.get("year_12","")),
+    clean_value(data_dict.get("marks_type_12","")),
+    data_dict.get("marks_12",""),
 
-# Graduation
-data_dict.get("college_grad",""),
-data_dict.get("university_grad",""),
-data_dict.get("year_grad",""),
-data_dict.get("marks_grad",""),
+    # Graduation
+    data_dict.get("college_grad",""),
+    data_dict.get("university_grad",""),
+    clean_value(data_dict.get("state_grad","")),
+    clean_value(data_dict.get("year_grad","")),
+    clean_value(data_dict.get("marks_type_grad","")),
+    data_dict.get("marks_grad",""),
 
-# Exam
-data_dict.get("exam_name",""),
-data_dict.get("exam_year",""),
-data_dict.get("exam_score",""),
-data_dict.get("exam_rank",""),
+    # Exam
+    data_dict.get("exam_name",""),
+    clean_value(data_dict.get("exam_year","")),
+    data_dict.get("exam_score",""),
+    data_dict.get("exam_rank",""),
 
-# Semester
-semester_summary,
+    # Semester
+    *sem_values,
 
-# Internship
-data_dict.get("intern_company",""),
-data_dict.get("intern_role",""),
-data_dict.get("intern_duration",""),
+    # Internship
+    data_dict.get("intern_company",""),
+    data_dict.get("intern_role",""),
+    data_dict.get("intern_duration",""),
+    clean_value(data_dict.get("intern_state","")),
 
-# Placement
-data_dict.get("Placed",""),
-data_dict.get("company",""),
-data_dict.get("role",""),
+    # Placement
+    data_dict.get("Placed",""),
+    data_dict.get("company",""),
+    data_dict.get("role",""),
+    data_dict.get("ctc",""),
+    clean_value(data_dict.get("country","")),
 
-folder_link,
+    folder_link,
 
-uploaded_links.get("doc_10",""),
-uploaded_links.get("doc_12",""),
-uploaded_links.get("doc_grad",""),
-uploaded_links.get("exam_doc",""),
-uploaded_links.get("intern_doc",""),
-uploaded_links.get("offer_doc",""),
-uploaded_links.get("address_doc",""),
-uploaded_links.get("resume_doc",""),
+    uploaded_links.get("doc_10",""),
+    uploaded_links.get("doc_12",""),
+    uploaded_links.get("doc_grad",""),
+    uploaded_links.get("exam_doc",""),
 
-form_status,
-datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-]]
+    uploaded_links.get("Semester_1",""),
+    uploaded_links.get("Semester_2",""),
+    uploaded_links.get("Semester_3",""),
+    uploaded_links.get("Semester_4",""),
+    uploaded_links.get("Semester_5",""),
+    uploaded_links.get("Semester_6",""),
+    uploaded_links.get("Semester_7",""),
+    uploaded_links.get("Semester_8",""),
+
+    uploaded_links.get("intern_doc",""),
+    uploaded_links.get("offer_doc",""),
+    uploaded_links.get("address_doc",""),
+    uploaded_links.get("resume_doc",""),
+
+    form_status,
+    datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    ]]
+
     sheet_service.spreadsheets().values().append(
         spreadsheetId=SHEET_ID,
-        range=f"{SAVE_TAB}!A:Z",
+        range=f"{SAVE_TAB}!A:ZZ",
         valueInputOption="RAW",
         body={"values": values}
     ).execute()
@@ -360,7 +424,7 @@ def calculate_completion():
         if get_section_status(i) == "complete":
             done += 1
     return int((done/5)*100)
-    
+
 # ================= NAVIGATION =================
 
 cols = st.columns(6)
@@ -402,7 +466,7 @@ if st.session_state.step == 1:
     email = st.text_input("Email", st.session_state.student_data.get("Email",""))
     loan_amount = st.text_input("Loan Amount", st.session_state.student_data.get("LoanAmount",""))
     course_name = st.text_input("Course Name", st.session_state.student_data.get("CourseName",""))
-    current_state = st.text_input("Current State", st.session_state.student_data.get("CurrentState",""))
+    current_loan_status = st.text_input("Current Loan Status", st.session_state.student_data.get("CurrentLoanStatus",""))
 
     st.session_state.student_data.update({
         "Application_ID": app_id,
@@ -411,7 +475,7 @@ if st.session_state.step == 1:
         "Email": email,
         "LoanAmount": loan_amount,
         "CourseName": course_name,
-        "CurrentState": current_state
+        "CurrentLoanStatus": current_loan_status
     })
 
 # ================= STEP 2 =================
@@ -421,7 +485,7 @@ elif st.session_state.step == 2:
     st.subheader("10th Details")
 
     school_10 = st.text_input(
-        "School Name (10th)",
+        "School Name (10th) - Enter Full School Name",
         value=st.session_state.student_data.get("school_10","")
     )
 
@@ -430,12 +494,28 @@ elif st.session_state.step == 2:
         value=st.session_state.student_data.get("board_10","")
     )
 
+    state_10 = st.selectbox(
+      "State (10th)",
+    states_list,
+    index=states_list.index(
+        st.session_state.student_data.get("state_10","Select State")
+    ) if st.session_state.student_data.get("state_10") in states_list else 0
+)
+
     year_10_value = st.session_state.student_data.get("year_10", "Select Year")
     year_10 = st.selectbox(
         "Year of Passing (10th)",
         year_options,
         index=year_options.index(year_10_value) if year_10_value in year_options else 0
     )
+
+    marks_type_10 = st.selectbox(
+    "Marks Type (10th)",
+    marks_type_options,
+    index=marks_type_options.index(
+        st.session_state.student_data.get("marks_type_10","Select")
+    ) if st.session_state.student_data.get("marks_type_10") in marks_type_options else 0
+)
 
     marks_10 = st.text_input(
         "Percentage / Marks (10th)",
@@ -455,7 +535,7 @@ elif st.session_state.step == 2:
     st.subheader("12th Details")
 
     school_12 = st.text_input(
-        "School Name (12th)",
+        "School Name (12th) - Enter Full School Name",
         value=st.session_state.student_data.get("school_12","")
     )
 
@@ -464,12 +544,28 @@ elif st.session_state.step == 2:
         value=st.session_state.student_data.get("board_12","")
     )
 
+    state_12 = st.selectbox(
+     "State (12th)",
+    states_list,
+    index=states_list.index(
+        st.session_state.student_data.get("state_12","Select State")
+    ) if st.session_state.student_data.get("state_12") in states_list else 0
+)
+
     year_12_value = st.session_state.student_data.get("year_12", "Select Year")
     year_12 = st.selectbox(
         "Year of Passing (12th)",
         year_options,
         index=year_options.index(year_12_value) if year_12_value in year_options else 0
     )
+
+    marks_type_12 = st.selectbox(
+    "Marks Type (12th)",
+    marks_type_options,
+    index=marks_type_options.index(
+        st.session_state.student_data.get("marks_type_12","Select")
+    ) if st.session_state.student_data.get("marks_type_12") in marks_type_options else 0
+)
 
     marks_12 = st.text_input(
         "Percentage / Marks (12th)",
@@ -489,7 +585,7 @@ elif st.session_state.step == 2:
     st.subheader("Graduation Details")
 
     college_grad = st.text_input(
-        "College Name (Graduation)",
+        "Graduation College - Enter Full College Name",
         value=st.session_state.student_data.get("college_grad","")
     )
 
@@ -504,6 +600,22 @@ elif st.session_state.step == 2:
         year_options,
         index=year_options.index(year_grad_value) if year_grad_value in year_options else 0
     )
+
+    marks_type_grad = st.selectbox(
+    "Marks Type (Graduation)",
+    marks_type_options,
+    index=marks_type_options.index(
+        st.session_state.student_data.get("marks_type_grad","Select")
+    ) if st.session_state.student_data.get("marks_type_grad") in marks_type_options else 0
+)
+
+    state_grad = st.selectbox(
+    "State (Graduation)",
+    states_list,
+    index=states_list.index(
+        st.session_state.student_data.get("state_grad","Select State")
+    ) if st.session_state.student_data.get("state_grad") in states_list else 0
+)
 
     marks_grad = st.text_input(
         "Final Percentage / CGPA",
@@ -555,19 +667,25 @@ elif st.session_state.step == 2:
     st.session_state.student_data.update({
         "school_10": school_10,
         "board_10": board_10,
+        "state_10": state_10,
         "year_10": year_10,
+        "marks_type_10": marks_type_10,
         "marks_10": marks_10,
         "doc_10": doc_10,
 
         "school_12": school_12,
         "board_12": board_12,
+        "state_12": state_12,
         "year_12": year_12,
+        "marks_type_12": marks_type_12,
         "marks_12": marks_12,
         "doc_12": doc_12,
 
         "college_grad": college_grad,
         "university_grad": university_grad,
+        "state_grad": state_grad,
         "year_grad": year_grad,
+        "marks_type_grad": marks_type_grad,
         "marks_grad": marks_grad,
         "doc_grad": doc_grad,
 
@@ -593,17 +711,50 @@ elif st.session_state.step == 3:
 
         existing = semester_data[i-1] if len(semester_data) >= i else {}
 
+        college_name = st.text_input(
+            f"College Name (Semester {i})",
+            value=existing.get("college",""),
+            key=f"sem_college_{i}"
+        )
+
+        course_name = st.text_input(
+            f"Course Name (Semester {i})",
+            value=existing.get("course",""),
+            key=f"sem_course_{i}"
+        )
+
         sem_name = st.text_input(
-            f"Semester {i} Name",
+            f"Semester Name (Semester {i})",
             value=existing.get("sem_name",""),
             key=f"sem_name_{i}"
         )
 
+        year_sem = st.selectbox(
+            f"Year (Semester {i})",
+            year_options,
+            index=year_options.index(existing.get("year","Select Year")) if existing.get("year") in year_options else 0,
+            key=f"sem_year_{i}"
+        )
+
+        marks_type_sem = st.selectbox(
+            f"Marks Type (Semester {i})",
+            marks_type_options,
+            index=marks_type_options.index(existing.get("marks_type","Select")) if existing.get("marks_type") in marks_type_options else 0,
+            key=f"sem_marks_type_{i}"
+        )
+
         sem_marks = st.text_input(
-            f"Semester {i} Percentage / CGPA",
+            f"Marks (Semester {i})",
             value=existing.get("marks",""),
             key=f"sem_marks_{i}"
         )
+
+        state_sem = st.selectbox(
+            f"State (Semester {i})",
+            states_list,
+            index=states_list.index(existing.get("state","Select State")) if existing.get("state") in states_list else 0,
+            key=f"sem_state_{i}"
+        )        
 
         sem_doc = st.file_uploader(
             f"Semester {i} Marksheet",
@@ -614,8 +765,13 @@ elif st.session_state.step == 3:
 
         updated_semesters.append({
             "sem_no": i,
+            "college": college_name,
+            "course": course_name,
             "sem_name": sem_name,
+            "year": year_sem,
+            "marks_type": marks_type_sem,
             "marks": sem_marks,
+            "state": state_sem,
             "doc": sem_doc if sem_doc else existing.get("doc")
         })
 
@@ -656,6 +812,14 @@ elif st.session_state.step == 4:
         value=st.session_state.student_data.get("intern_duration","")
     )
 
+    intern_state = st.selectbox(
+    "Internship State",
+    states_list,
+    index=states_list.index(
+        st.session_state.student_data.get("intern_state","Select State")
+    ) if st.session_state.student_data.get("intern_state") in states_list else 0
+)
+
     intern_doc_new = st.file_uploader("Internship Certificate", key="intern_doc")
     intern_doc_new = validate_file(intern_doc_new)
 
@@ -668,6 +832,7 @@ elif st.session_state.step == 4:
         "intern_company": intern_company,
         "intern_role": intern_role,
         "intern_duration": intern_duration,
+        "intern_state": intern_state,
         "intern_doc": intern_doc if intern_doc else st.session_state.student_data.get("intern_doc")
     })
 
@@ -697,6 +862,19 @@ elif st.session_state.step == 5:
         role = st.text_input(
             "Role",
             value=st.session_state.student_data.get("role", "")
+        )
+
+        ctc = st.text_input(
+            "CTC (Annual Package)",
+            value=st.session_state.student_data.get("ctc","")
+        )
+
+        country = st.selectbox(
+            "Country of Job",
+            country_list,
+            index=country_list.index(
+                st.session_state.student_data.get("country","Select Country")
+            ) if st.session_state.student_data.get("country") in country_list else 0
         )
 
         # ===== OFFER LETTER =====
@@ -737,8 +915,11 @@ elif st.session_state.step == 5:
 
         st.session_state.student_data.update({
             "company": company,
-            "role": role
+            "role": role,
+            "ctc": ctc,
+            "country": country
         })
+
 # ================= STEP 6 =================
 elif st.session_state.step == 6:
 
@@ -754,16 +935,16 @@ elif st.session_state.step == 6:
     st.write("Email:", data.get("Email",""))
     st.write("Loan Amount:", data.get("LoanAmount",""))
     st.write("Course:", data.get("CourseName",""))
-    st.write("Current State:", data.get("CurrentState",""))
+    st.write("Current Loan Status:", data.get("CurrentLoanStatus",""))
 
     st.markdown("---")
 
     # -------- EDUCATION --------
     st.markdown("### 🎓 Education Details")
 
-    st.write("10th:", data.get("school_10",""), "-", data.get("marks_10",""))
-    st.write("12th:", data.get("school_12",""), "-", data.get("marks_12",""))
-    st.write("Graduation:", data.get("college_grad",""), "-", data.get("marks_grad",""))
+    st.write("10th:", data.get("school_10",""), "-", data.get("marks_10",""), "-", data.get("state_10",""))
+    st.write("12th:", data.get("school_12",""), "-", data.get("marks_12",""), "-", data.get("state_12",""))
+    st.write("Graduation:", data.get("college_grad",""), "-", data.get("marks_grad",""), "-", data.get("state_grad",""))
     st.write("Competitive Exam:", data.get("exam_name",""), "-", data.get("exam_score",""))
 
     st.markdown("---")
@@ -842,16 +1023,4 @@ if c1.button("⬅ Back") and st.session_state.step>1:
 
 if c2.button("Next ➡") and st.session_state.step<6:
     st.session_state.step+=1
-
     st.rerun()
-
-
-
-
-
-
-
-
-
-
-
