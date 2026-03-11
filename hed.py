@@ -277,7 +277,7 @@ def save_to_sheet(data_dict, folder_link, uploaded_links):
 
     sheet_service.spreadsheets().values().append(
         spreadsheetId=SHEET_ID,
-        range=f"{SAVE_TAB}!A:ZZ",
+        range=f"{SAVE_TAB}!A1",
         valueInputOption="RAW",
         body={"values": values}
     ).execute()
@@ -1024,6 +1024,7 @@ if c1.button("⬅ Back") and st.session_state.step>1:
 if c2.button("Next ➡") and st.session_state.step<6:
     st.session_state.step+=1
     st.rerun()
+
 
 
 
