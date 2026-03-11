@@ -188,7 +188,7 @@ def save_to_sheet(data_dict, folder_link, uploaded_links):
             ])
 
         else:
-            sem_values.extend(["","","","","","",""])
+            sem_values.extend(["","","","","",""])
 
 
     form_status = calculate_form_status(data_dict)
@@ -1024,6 +1024,7 @@ if c1.button("⬅ Back") and st.session_state.step>1:
 if c2.button("Next ➡") and st.session_state.step<6:
     st.session_state.step+=1
     st.rerun()
+
 
 
 
