@@ -72,7 +72,10 @@ if "semester_count" not in st.session_state:
     st.session_state.semester_count = 2
 
 if "submitted" not in st.session_state:
-    st.session_state.submitted = False    
+    st.session_state.submitted = False   
+
+if "drive_folder_id" not in st.session_state:
+    st.session_state.drive_folder_id = None 
 
 # ================= FETCH FUNCTION =================
 
@@ -985,11 +988,17 @@ elif st.session_state.step == 6:
 
         try:
             folder_name = f"{data.get('Application_ID','')}_{data.get('Name','')}"
-            folder_id = create_student_folder(folder_name)
+
+            if st.session_state.drive_folder_id is None:
+              folder_id = create_student_folder(folder_name)
+              st.session_state.drive_folder_id = folder_id
+            else:
+                folder_id = st.session_state.drive_folder_id
+
             folder_link = f"https://drive.google.com/drive/folders/{folder_id}"
 
             uploaded_links = {}
-
+            
             # Upload normal files
             for key, value in data.items():
                 if hasattr(value, "type"):
