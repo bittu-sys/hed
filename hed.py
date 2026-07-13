@@ -27,7 +27,6 @@ def validate_file(uploaded_file):
 
 FOLDER_ID = "0AKQoF-VACGZsUk9PVA"
 SHEET_ID = "1An8HEEx-pDJso87QkZSlE5Ot3yW9sl-59k7XQwQ7iic"
-FETCH_TAB = "HED"
 SAVE_TAB = "HED_SUBMISSIONS"
 
 SCOPES = [
@@ -71,7 +70,7 @@ def init_session():
     defaults = {
         "step": 1,
         "student_data": {},
-        "semester_count": 2,
+        "semester_count": 1,
         "submitted": False,
         "drive_folder_id": None,
         "existing_row_index": None,
@@ -82,12 +81,106 @@ def init_session():
         # Structure: { "doc_10": "https://...", "folder_link": "https://...", ... }
         "saved_links": {},
         "last_submit_success": None,
+        "data_fetched": False,
+        "fetch_app_id": "",
+        "fetch_tranche": "",
+        "data_fetched": False,
+        "allow_next": False,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
 
 init_session()
+
+def reset_student_data(app_id, tranche_number):
+    """
+    Blank form for new tranche / new application.
+    Prevents previous tranche data from remaining in session.
+    """
+
+    st.session_state.student_data = {
+
+        # Basic
+        "Application_ID": app_id,
+        "TrancheNumber": tranche_number,
+
+        "Name": "",
+        "Mobile": "",
+        "Email": "",
+        "CourseName": "",
+        "CurrentLoanStatus": "",
+        "SanctionLoanAmount": "",
+        "DisbursementTrancheAmount": "",
+
+        # Education
+        "school_10": "",
+        "board_10": "",
+        "state_10": "Select State",
+        "year_10": "Select Year",
+        "marks_type_10": "Select",
+        "marks_10": "",
+
+        "school_12": "",
+        "board_12": "",
+        "state_12": "Select State",
+        "year_12": "Select Year",
+        "marks_type_12": "Select",
+        "marks_12": "",
+
+        "HasGraduation": "No",
+        "college_grad": "",
+        "university_grad": "",
+        "state_grad": "Select State",
+        "year_grad": "Select Year",
+        "marks_type_grad": "Select",
+        "marks_grad": "",
+
+        "HasPostGraduation": "No",
+        "pg_college": "",
+        "pg_university": "",
+        "pg_state": "Select State",
+        "pg_year": "Select Year",
+        "pg_marks_type": "Select",
+        "pg_marks": "",
+
+        "HasOtherCourse": "No",
+        "other_course_name": "",
+        "other_institute_name": "",
+        "other_course_completion_year": "Select Year",
+        "other_course_marks": "",
+
+        "HasCompetitiveExam": "No",
+        "exam_name": "",
+        "exam_year": "Select Year",
+        "exam_score": "",
+        "exam_rank": "",
+
+        # Semester
+        "ug_semester_data": [],
+        "pg_semester_data": [],
+
+        # Internship
+        "intern_company": "",
+        "intern_role": "",
+        "intern_duration": "",
+        "intern_state": "Select State",
+
+        # Placement
+        "Placed": "No",
+        "company": "",
+        "role": "",
+        "ctc": "",
+        "current_address": "",
+        "country": "Select Country"
+    }
+
+    st.session_state.saved_links = {}
+    st.session_state.file_store = {}
+    st.session_state.drive_folder_id = None
+    st.session_state.existing_row_index = None
+    st.session_state.semester_count = 1
+    st.session_state.last_submit_success = None
 
 
 # ================= FILE PERSISTENCE HELPERS =================
@@ -194,29 +287,8 @@ def validate_all_uploaded_files():
 
 # ================= GOOGLE SHEET HELPERS =================
 
-def fetch_application_data(app_id):
-    """Fetch basic data from HED tab."""
-    result = sheet_service.spreadsheets().values().get(
-        spreadsheetId=SHEET_ID,
-        range=f"{FETCH_TAB}!A:G"
-    ).execute()
-    values = result.get("values", [])
-    for row in values[1:]:
-        if row and row[0] == app_id:
-            return {
-                "Application_ID":    row[0],
-                "Name":              row[1] if len(row) > 1 else "",
-                "Mobile":            row[2] if len(row) > 2 else "",
-                "Email":             row[3] if len(row) > 3 else "",
-                "LoanAmount":        row[4] if len(row) > 4 else "",
-                "CourseName":        row[5] if len(row) > 5 else "",
-                "CurrentLoanStatus": row[6] if len(row) > 6 else "",
-            }
-    return None
-
-
-def fetch_existing_submission(app_id):
-    """Fetch existing row from HED_SUBMISSIONS tab. Returns (row_index, row_data, header_row)."""
+def fetch_existing_submission(app_id, tranche_number):
+    """Fetch existing row using Application_ID + TrancheNumber"""
     result = sheet_service.spreadsheets().values().get(
         spreadsheetId=SHEET_ID,
         range=f"{SAVE_TAB}!A:ZZ"
@@ -224,147 +296,253 @@ def fetch_existing_submission(app_id):
     values = result.get("values", [])
     if not values:
         return None, None, None
-    header_row = values[0]
+    header = values[0]
+    try:
+        tranche_col = header.index("TrancheNumber")
+    except ValueError:
+        tranche_col = 6    
     for idx, row in enumerate(values[1:], start=2):
-        if row and len(row) > 0 and row[0] == app_id:
-            return idx, row, header_row
+        row_app = row[0] if len(row) > 0 else ""
+        row_tranche = row[tranche_col] if len(row) > tranche_col else ""
+
+        if (
+        str(row_app).strip() == str(app_id).strip()
+        and
+        str(row_tranche).strip() == str(tranche_number).strip()
+        ):
+            return idx, row, header
     return None, None, None
 
 
 def parse_existing_row(row_data, header_row):
     """
-    Parse a submission row into student_data dict and saved_links dict.
-
-    KEY: We build a header→index map first, then look up every column by
-    its exact header name. This survives column reordering and the
-    ensure_sheet_headers() expansion without ever reading the wrong cell.
+    Parse existing Google Sheet row into student_data and saved_links.
+    Header based parsing so column order can change safely.
     """
-    # ── Build header→index map (case + space insensitive) ─────────────────
+
+    # ================= HEADER MAP =================
+
     hmap = {}
+
     for idx, h in enumerate(header_row):
-        key = str(h).strip().lower()
-        hmap[key] = idx
+        hmap[str(h).strip().lower()] = idx
 
-    def ph(header_name, fallback_idx=None):
-        """Get row value by header name; fallback to positional index if missing."""
+    def ph(header_name):
         idx = hmap.get(str(header_name).strip().lower())
-        if idx is not None:
-            return row_data[idx] if idx < len(row_data) else ""
-        if fallback_idx is not None:
-            return row_data[fallback_idx] if fallback_idx < len(row_data) else ""
-        return ""
 
-    def p(i):
-        return row_data[i] if i < len(row_data) else ""
+        if idx is None:
+            return ""
+
+        return row_data[idx] if idx < len(row_data) else ""
+
+    # ================= STUDENT DATA =================
 
     student_data = {
-        "Application_ID":    p(0),
-        "Name":              p(1),
-        "Mobile":            p(2),
-        "Email":             p(3),
-        "LoanAmount":        p(4),
-        "CourseName":        p(5),
-        "CurrentLoanStatus": p(6),
 
-        "school_10":      ph("10th school",     7),
-        "board_10":       ph("10th board",      8),
-        "state_10":       ph("10th state",      9),
-        "year_10":        ph("10th year",       10),
-        "marks_type_10":  ph("10th marks type", 11),
-        "marks_10":       ph("10th marks",      12),
+        # ---------- BASIC ----------
 
-        "school_12":      ph("12th school",     13),
-        "board_12":       ph("12th board",      14),
-        "state_12":       ph("12th state",      15),
-        "year_12":        ph("12th year",       16),
-        "marks_type_12":  ph("12th marks type", 17),
-        "marks_12":       ph("12th marks",      18),
+        "Application_ID": ph("Application_ID"),
+        "Name": ph("Name"),
+        "Mobile": ph("Mobile"),
+        "Email": ph("Email"),
 
-        "college_grad":     ph("graduation college", 19),
-        "university_grad":  ph("university",         20),
-        "state_grad":       ph("graduation state",   21),
-        "year_grad":        ph("grad year",          22),
-        "marks_type_grad":  ph("grad marks type",    23),
-        "marks_grad":       ph("grad marks",         24),
+        "CourseName": ph("CourseName"),
+        "CurrentLoanStatus": ph("CurrentLoanStatus"),
 
-        "exam_name":  ph("exam name",  25),
-        "exam_year":  ph("exam year",  26),
-        "exam_score": ph("exam score", 27),
-        "exam_rank":  ph("exam rank",  28),
+        "TrancheNumber": ph("TrancheNumber"),
+        "SanctionLoanAmount": ph("SanctionLoanAmount"),
+        "DisbursementTrancheAmount": ph("DisbursementTrancheAmount"),
 
-        "intern_company":  ph("Intern Company"),
-        "intern_role":     ph("Intern Role"),
+        # ---------- 10TH ----------
+
+        "school_10": ph("10th School"),
+        "board_10": ph("10th Board"),
+        "state_10": ph("10th State"),
+        "year_10": ph("10th Year"),
+        "marks_type_10": ph("10th Marks Type"),
+        "marks_10": ph("10th Marks"),
+
+        # ---------- 12TH ----------
+
+        "school_12": ph("12th School"),
+        "board_12": ph("12th Board"),
+        "state_12": ph("12th State"),
+        "year_12": ph("12th Year"),
+        "marks_type_12": ph("12th Marks Type"),
+        "marks_12": ph("12th Marks"),
+
+        # ---------- GRAD ----------
+
+        "HasGraduation": ph("HasGraduation"),
+        "college_grad": ph("Graduation College"),
+        "university_grad": ph("University"),
+        "state_grad": ph("Graduation State"),
+        "year_grad": ph("Grad Year"),
+        "marks_type_grad": ph("Grad Marks Type"),
+        "marks_grad": ph("Grad Marks"),
+
+        # ---------- PG ----------
+
+        "HasPostGraduation": ph("HasPostGraduation"),
+
+        "pg_college": ph("PG College"),
+        "pg_university": ph("PG University"),
+        "pg_state": ph("PG State"),
+        "pg_year": ph("PG Year"),
+        "pg_marks_type": ph("PG Marks Type"),
+        "pg_marks": ph("PG Marks"),
+
+        # ---------- OTHER COURSE ----------
+
+        "HasOtherCourse": ph("HasOtherCourse"),
+        "other_course_name": ph("Other Course Name"),
+        "other_institute_name": ph("Other Institute Name"),
+        "other_course_completion_year": ph("Other Course Completion Year"),
+        "other_course_marks": ph("Other Course Marks"),
+
+        # ---------- EXAM ----------
+
+        "HasCompetitiveExam": ph("HasCompetitiveExam"),
+        "exam_name": ph("Exam Name"),
+        "exam_year": ph("Exam Year"),
+        "exam_score": ph("Exam Score"),
+        "exam_rank": ph("Exam Rank"),
+
+        # ---------- INTERNSHIP ----------
+
+        "intern_company": ph("Intern Company"),
+        "intern_role": ph("Intern Role"),
         "intern_duration": ph("Intern Duration"),
-        "intern_state":    ph("Intern State"),
+        "intern_state": ph("Intern State"),
 
-        "Placed":          ph("Placed"),
-        "company":         ph("Company"),
-        "role":            ph("Role"),
-        "ctc":             ph("CTC"),
+        # ---------- PLACEMENT ----------
+
+        "Placed": ph("Placed"),
+        "company": ph("Company"),
+        "role": ph("Role"),
+        "ctc": ph("CTC"),
         "current_address": ph("Current Address"),
-        "country":         ph("Country"),
+        "country": ph("Country"),
     }
+    
+        # ================= UG SEMESTERS =================
 
-    # Semester data — read by sem header names first, positional fallback
-    semester_data = []
+    ug_semesters = []
+
     for i in range(1, 9):
-        college    = ph(f"sem{i}_college")    or p(29 + (i-1)*6)
-        course     = ph(f"sem{i}_course")     or p(30 + (i-1)*6)
-        year       = ph(f"sem{i}_year")       or p(31 + (i-1)*6)
-        marks_type = ph(f"sem{i}_marks_type") or p(32 + (i-1)*6)
-        marks      = ph(f"sem{i}_marks")      or p(33 + (i-1)*6)
-        state      = ph(f"sem{i}_state")      or p(34 + (i-1)*6)
-        if college or marks:
-            semester_data.append({
-                "sem_no":     i,
-                "college":    college,
-                "course":     course,
-                "year":       year,
-                "marks_type": marks_type,
-                "marks":      marks,
-                "state":      state,
-                "doc":        None
-            })
-    student_data["semester_data"] = semester_data
 
-    # ── Read all Drive links by header name ───────────────────────────────
-    # This works whether columns are at 78, 87, or any position — as long
-    # as the header row has the right names (ensure_sheet_headers adds them).
+        sem = {
+            "sem_no": i,
+            "college": ph(f"ug_sem{i}_college"),
+            "course": ph(f"ug_sem{i}_course"),
+            "year": ph(f"ug_sem{i}_year"),
+            "marks_type": ph(f"ug_sem{i}_marks_type"),
+            "marks": ph(f"ug_sem{i}_marks"),
+            "state": ph(f"ug_sem{i}_state")
+        }
+
+        if any([
+            sem["college"],
+            sem["course"],
+            sem["year"],
+            sem["marks_type"],
+            sem["marks"],
+            sem["state"]
+        ]):
+            ug_semesters.append(sem)
+
+    student_data["ug_semester_data"] = ug_semesters
+
+
+    # ================= PG SEMESTERS =================
+
+    pg_semesters = []
+
+    for i in range(1, 9):
+
+        sem = {
+            "sem_no": i,
+            "college": ph(f"pg_sem{i}_college"),
+            "course": ph(f"pg_sem{i}_course"),
+            "year": ph(f"pg_sem{i}_year"),
+            "marks_type": ph(f"pg_sem{i}_marks_type"),
+            "marks": ph(f"pg_sem{i}_marks"),
+            "state": ph(f"pg_sem{i}_state")
+        }
+
+        if any([
+            sem["college"],
+            sem["course"],
+            sem["year"],
+            sem["marks_type"],
+            sem["marks"],
+            sem["state"]
+        ]):
+            pg_semesters.append(sem)
+
+    student_data["pg_semester_data"] = pg_semesters
+
+        # ================= SAVED LINKS =================
+
     saved_links = {
-        "folder_link": ph("drivefolderlink"),
-        "doc_10": ph("10th Doc") or ph("doc_10"),
-        "doc_12": ph("12th Doc") or ph("doc_12"),
-        "doc_grad": ph("Grad Doc") or ph("doc_grad"),
-        "exam_doc": ph("Exam Doc") or ph("exam_doc"),
-        "Semester_1": ph("Sem1 Doc") or ph("Semester_1"),
-        "Semester_2": ph("Sem2 Doc") or ph("Semester_2"),
-        "Semester_3": ph("Sem3 Doc") or ph("Semester_3"),
-        "Semester_4": ph("Sem4 Doc") or ph("Semester_4"),
-        "Semester_5": ph("Sem5 Doc") or ph("Semester_5"),
-        "Semester_6": ph("Sem6 Doc") or ph("Semester_6"),
-        "Semester_7": ph("Sem7 Doc") or ph("Semester_7"),
-        "Semester_8": ph("Sem8 Doc") or ph("Semester_8"),
-        "intern_doc": ph("Intern Doc") or ph("intern_doc"),
-        "offer_doc": ph("Offer Letter") or ph("offer_doc"),
-        "address_doc": ph("Address Proof") or ph("address_doc"),
-        "resume_doc": ph("Resume") or ph("resume_doc"),
+
+        "folder_link": ph("DriveFolderLink"),
+
+        # Education Docs
+        "doc_10": ph("doc_10"),
+        "doc_12": ph("doc_12"),
+        "doc_grad": ph("doc_grad"),
+        "doc_pg": ph("doc_pg"),
+        "other_course_doc": ph("other_course_doc"),
+        "exam_doc": ph("exam_doc"),
+
+        # UG Semester Docs
+        "UG_Semester_1": ph("UG_Semester_1"),
+        "UG_Semester_2": ph("UG_Semester_2"),
+        "UG_Semester_3": ph("UG_Semester_3"),
+        "UG_Semester_4": ph("UG_Semester_4"),
+        "UG_Semester_5": ph("UG_Semester_5"),
+        "UG_Semester_6": ph("UG_Semester_6"),
+        "UG_Semester_7": ph("UG_Semester_7"),
+        "UG_Semester_8": ph("UG_Semester_8"),
+
+        # PG Semester Docs
+        "PG_Semester_1": ph("PG_Semester_1"),
+        "PG_Semester_2": ph("PG_Semester_2"),
+        "PG_Semester_3": ph("PG_Semester_3"),
+        "PG_Semester_4": ph("PG_Semester_4"),
+        "PG_Semester_5": ph("PG_Semester_5"),
+        "PG_Semester_6": ph("PG_Semester_6"),
+        "PG_Semester_7": ph("PG_Semester_7"),
+        "PG_Semester_8": ph("PG_Semester_8"),
+
+        # Other Docs
+        "intern_doc": ph("intern_doc"),
+        "offer_doc": ph("offer_doc"),
+        "address_doc": ph("address_doc"),
+        "resume_doc": ph("resume_doc"),
     }
 
+    # Remove blank values
     saved_links = {
-        k: v for k, v in saved_links.items()
+        k: v
+        for k, v in saved_links.items()
         if str(v).strip()
     }
 
-    # Store debug info for Step 1 expander
+    # ================= DEBUG =================
+
+    st.session_state["_debug_headers"] = list(header_row)
+    st.session_state["_debug_hmap"] = hmap
+    st.session_state["_debug_saved_links"] = dict(saved_links)
+    st.session_state["_debug_total_cols"] = len(header_row)
+
     folder_col_idx = hmap.get("drivefolderlink")
-    st.session_state["_debug_headers"]        = list(header_row)
     st.session_state["_debug_folder_col_idx"] = folder_col_idx
-    st.session_state["_debug_total_cols"]     = len(header_row)
-    st.session_state["_debug_hmap"]           = hmap
-    st.session_state["_debug_saved_links"]    = dict(saved_links)
+
+    # ================= RETURN =================
 
     return student_data, saved_links
-
 
 # ================= DRIVE HELPERS =================
 
@@ -480,13 +658,13 @@ def upload_file_to_drive(
     )
 
 
-def find_existing_drive_folder(app_id, name):
+def find_existing_drive_folder(app_id, name, tranche):
     """
     Search Drive for an existing folder named AppID_Name inside FOLDER_ID.
     Returns folder_id if found, else None.
     """
     try:
-        folder_name = f"{app_id}_{name}"
+        folder_name = f"{app_id}_TRANCHE_{tranche}"
         query = (
             f"name='{folder_name}' "
             f"and mimeType='application/vnd.google-apps.folder' "
@@ -521,7 +699,15 @@ def resolve_or_create_folder(data):
     name   = data.get("Name", "")
 
     # ── Priority 1: already resolved this session ──────────────────────
-    if st.session_state.drive_folder_id:
+    current_app = data.get("Application_ID")
+    current_tranche = data.get("TrancheNumber")
+    if (
+        st.session_state.fetch_app_id == current_app
+        and
+        st.session_state.fetch_tranche == current_tranche
+        and
+        st.session_state.drive_folder_id
+    ):
         return st.session_state.drive_folder_id
 
     # ── Priority 2: link in sheet ───────────────────────────────────────
@@ -533,7 +719,7 @@ def resolve_or_create_folder(data):
 
     # ── Priority 3: search Drive by name (old submissions, link missing) ─
     if (st.session_state.get("existing_row_index") is not None or app_id):
-        found_id = find_existing_drive_folder(app_id, name)
+        found_id = find_existing_drive_folder(app_id, name,data.get("TrancheNumber", ""))
         if found_id:
             st.info(f"📁 Existing Drive folder found by name search.")
             st.session_state.drive_folder_id = found_id
@@ -544,7 +730,8 @@ def resolve_or_create_folder(data):
             return found_id
 
     # ── Priority 4: create new folder ──────────────────────────────────
-    folder_name   = f"{app_id}_{name}"
+    tranche = data.get("TrancheNumber", "")
+    folder_name = f"{app_id}_TRANCHE_{tranche}"
     new_folder_id = create_student_folder(folder_name)
     st.session_state.drive_folder_id = new_folder_id
     return new_folder_id
@@ -560,32 +747,223 @@ def clean_value(val):
 
 # ── FULL expected header row (must match build_row_values column order) ──
 EXPECTED_HEADERS = [
-    "Application_ID","Name","Mobile","Email","LoanAmount","CourseName","CurrentLoanStatus",
-    "10th School","10th Board","10th State","10th Year","10th Marks Type","10th Marks",
-    "12th School","12th Board","12th State","12th Year","12th Marks Type","12th Marks",
-    "Graduation College","University","Graduation State","Grad Year","Grad Marks Type","Grad Marks",
-    "Exam Name","Exam Year","Exam Score","Exam Rank",
-    "sem1_college","sem1_course","sem1_year","sem1_marks_type","sem1_marks","sem1_state",
-    "sem2_college","sem2_course","sem2_year","sem2_marks_type","sem2_marks","sem2_state",
-    "sem3_college","sem3_course","sem3_year","sem3_marks_type","sem3_marks","sem3_state",
-    "sem4_college","sem4_course","sem4_year","sem4_marks_type","sem4_marks","sem4_state",
-    "sem5_college","sem5_course","sem5_year","sem5_marks_type","sem5_marks","sem5_state",
-    "sem6_college","sem6_course","sem6_year","sem6_marks_type","sem6_marks","sem6_state",
-    "sem7_college","sem7_course","sem7_year","sem7_marks_type","sem7_marks","sem7_state",
-    "sem8_college","sem8_course","sem8_year","sem8_marks_type","sem8_marks","sem8_state",
-    "Intern Company","Intern Role","Intern Duration","Intern State",
-    "Placed","Company","Role","CTC","Current Address","Country",
-    "DriveFolderLink",
-    "doc_10","doc_12","doc_grad","exam_doc",
-    "Semester_1","Semester_2","Semester_3","Semester_4","Semester_5","Semester_6","Semester_7","Semester_8",
-    "intern_doc","offer_doc","address_doc","resume_doc",
-    "FormStatus","SubmittedAt"
+"Application_ID",
+"Name",
+"Mobile",
+"Email",
+"CourseName",
+"CurrentLoanStatus",
+"TrancheNumber",
+"SanctionLoanAmount",
+"DisbursementTrancheAmount",
+
+"10th School",
+"10th Board",
+"10th State",
+"10th Year",
+"10th Marks Type",
+"10th Marks",
+
+"12th School",
+"12th Board",
+"12th State",
+"12th Year",
+"12th Marks Type",
+"12th Marks",
+
+"HasGraduation",
+"Graduation College",
+"University",
+"Graduation State",
+"Grad Year",
+"Grad Marks Type",
+"Grad Marks",
+
+"HasPostGraduation",
+"PG College",
+"PG University",
+"PG State",
+"PG Year",
+"PG Marks Type",
+"PG Marks",
+
+"HasOtherCourse",
+"Other Course Name",
+"Other Institute Name",
+"Other Course Completion Year",
+"Other Course Marks",
+
+"HasCompetitiveExam",
+"Exam Name",
+"Exam Year",
+"Exam Score",
+"Exam Rank",
+
+"ug_sem1_college",
+"ug_sem1_course",
+"ug_sem1_year",
+"ug_sem1_marks_type",
+"ug_sem1_marks",
+"ug_sem1_state",
+
+"ug_sem2_college",
+"ug_sem2_course",
+"ug_sem2_year",
+"ug_sem2_marks_type",
+"ug_sem2_marks",
+"ug_sem2_state",
+
+"ug_sem3_college",
+"ug_sem3_course",
+"ug_sem3_year",
+"ug_sem3_marks_type",
+"ug_sem3_marks",
+"ug_sem3_state",
+
+"ug_sem4_college",
+"ug_sem4_course",
+"ug_sem4_year",
+"ug_sem4_marks_type",
+"ug_sem4_marks",
+"ug_sem4_state",
+
+"ug_sem5_college",
+"ug_sem5_course",
+"ug_sem5_year",
+"ug_sem5_marks_type",
+"ug_sem5_marks",
+"ug_sem5_state",
+
+"ug_sem6_college",
+"ug_sem6_course",
+"ug_sem6_year",
+"ug_sem6_marks_type",
+"ug_sem6_marks",
+"ug_sem6_state",
+
+"ug_sem7_college",
+"ug_sem7_course",
+"ug_sem7_year",
+"ug_sem7_marks_type",
+"ug_sem7_marks",
+"ug_sem7_state",
+
+"ug_sem8_college",
+"ug_sem8_course",
+"ug_sem8_year",
+"ug_sem8_marks_type",
+"ug_sem8_marks",
+"ug_sem8_state",
+
+"pg_sem1_college",
+"pg_sem1_course",
+"pg_sem1_year",
+"pg_sem1_marks_type",
+"pg_sem1_marks",
+"pg_sem1_state",
+
+"pg_sem2_college",
+"pg_sem2_course",
+"pg_sem2_year",
+"pg_sem2_marks_type",
+"pg_sem2_marks",
+"pg_sem2_state",
+
+"pg_sem3_college",
+"pg_sem3_course",
+"pg_sem3_year",
+"pg_sem3_marks_type",
+"pg_sem3_marks",
+"pg_sem3_state",
+
+"pg_sem4_college",
+"pg_sem4_course",
+"pg_sem4_year",
+"pg_sem4_marks_type",
+"pg_sem4_marks",
+"pg_sem4_state",
+
+"pg_sem5_college",
+"pg_sem5_course",
+"pg_sem5_year",
+"pg_sem5_marks_type",
+"pg_sem5_marks",
+"pg_sem5_state",
+
+"pg_sem6_college",
+"pg_sem6_course",
+"pg_sem6_year",
+"pg_sem6_marks_type",
+"pg_sem6_marks",
+"pg_sem6_state",
+
+"pg_sem7_college",
+"pg_sem7_course",
+"pg_sem7_year",
+"pg_sem7_marks_type",
+"pg_sem7_marks",
+"pg_sem7_state",
+
+"pg_sem8_college",
+"pg_sem8_course",
+"pg_sem8_year",
+"pg_sem8_marks_type",
+"pg_sem8_marks",
+"pg_sem8_state",
+
+"Intern Company",
+"Intern Role",
+"Intern Duration",
+"Intern State",
+
+"Placed",
+"Company",
+"Role",
+"CTC",
+
+"Current Address",
+"Country",
+
+"DriveFolderLink",
+
+"doc_10",
+"doc_12",
+"doc_grad",
+"doc_pg",
+"other_course_doc",
+"exam_doc",
+
+"UG_Semester_1",
+"UG_Semester_2",
+"UG_Semester_3",
+"UG_Semester_4",
+"UG_Semester_5",
+"UG_Semester_6",
+"UG_Semester_7",
+"UG_Semester_8",
+
+"PG_Semester_1",
+"PG_Semester_2",
+"PG_Semester_3",
+"PG_Semester_4",
+"PG_Semester_5",
+"PG_Semester_6",
+"PG_Semester_7",
+"PG_Semester_8",
+
+"intern_doc",
+"offer_doc",
+"address_doc",
+"resume_doc",
+
+"FormStatus",
+"SubmittedAt"
 ]
 
 
 def ensure_sheet_headers():
     """
-    Ensure header row in HED_SUBMISSIONS has ALL expected columns.
+    Ensure header row in HHED_SUBMISSIONS_NEW has ALL expected columns.
 
     Strategy:
     - Read current header row
@@ -628,106 +1006,246 @@ def col_index_to_letter(index):
         result = chr(65 + rem) + result
     return result
 
-
 def calculate_form_status(data_dict):
+
     statuses = [get_section_status(i) for i in range(1, 6)]
-    semesters = data_dict.get("semester_data", [])
+
+    ug_semesters = data_dict.get("ug_semester_data", [])
+    pg_semesters = data_dict.get("pg_semester_data", [])
+
     semester_filled = any(
-        sem.get("college") and (
-            st.session_state.file_store.get(f"Semester_{sem.get('sem_no')}") or
-            st.session_state.saved_links.get(f"Semester_{sem.get('sem_no')}")
-        )
-        for sem in semesters
+        sem.get("college")
+        for sem in ug_semesters
     )
-    if not semester_filled:
+
+    pg_semester_filled = any(
+        sem.get("college")
+        for sem in pg_semesters
+    )
+
+    if not semester_filled and not pg_semester_filled:
         return "PARTIAL"
+
     if all(s == "complete" for s in statuses):
         return "COMPLETE"
+
     if any(s != "empty" for s in statuses):
         return "PARTIAL"
+
     return "EMPTY"
 
-
 def build_row_values(data_dict, folder_link, uploaded_links):
-    semesters = data_dict.get("semester_data", [])
-    sem_values = []
-    for i in range(8):
-        if i < len(semesters):
-            sem = semesters[i]
-            sem_values.extend([
-                sem.get("college", ""),
-                sem.get("course", ""),
-                clean_value(sem.get("year", "")),
-                clean_value(sem.get("marks_type", "")),
-                sem.get("marks", ""),
-                clean_value(sem.get("state", ""))
-            ])
-        else:
-            sem_values.extend(["", "", "", "", "", ""])
 
     form_status = calculate_form_status(data_dict)
 
-    return [
+    ug_semesters = {
+        s.get("sem_no"): s
+        for s in data_dict.get("ug_semester_data", [])
+    }
+
+    pg_semesters = {
+        s.get("sem_no"): s
+        for s in data_dict.get("pg_semester_data", [])
+    }
+
+    row = [
+
+        # ================= BASIC =================
+
         data_dict.get("Application_ID", ""),
         data_dict.get("Name", ""),
         data_dict.get("Mobile", ""),
         data_dict.get("Email", ""),
-        data_dict.get("LoanAmount", ""),
+
         data_dict.get("CourseName", ""),
         data_dict.get("CurrentLoanStatus", ""),
+
+        data_dict.get("TrancheNumber", ""),
+        data_dict.get("SanctionLoanAmount", ""),
+        data_dict.get("DisbursementTrancheAmount", ""),
+
+        # ================= 10TH =================
+
         data_dict.get("school_10", ""),
         data_dict.get("board_10", ""),
         clean_value(data_dict.get("state_10", "")),
         clean_value(data_dict.get("year_10", "")),
         clean_value(data_dict.get("marks_type_10", "")),
         data_dict.get("marks_10", ""),
+
+        # ================= 12TH =================
+
         data_dict.get("school_12", ""),
         data_dict.get("board_12", ""),
         clean_value(data_dict.get("state_12", "")),
         clean_value(data_dict.get("year_12", "")),
         clean_value(data_dict.get("marks_type_12", "")),
         data_dict.get("marks_12", ""),
+
+        # ================= GRAD =================
+
+        data_dict.get("HasGraduation", ""),
         data_dict.get("college_grad", ""),
         data_dict.get("university_grad", ""),
         clean_value(data_dict.get("state_grad", "")),
         clean_value(data_dict.get("year_grad", "")),
         clean_value(data_dict.get("marks_type_grad", "")),
         data_dict.get("marks_grad", ""),
+
+        # ================= PG =================
+
+        data_dict.get("HasPostGraduation", ""),
+
+        data_dict.get("pg_college", ""),
+        data_dict.get("pg_university", ""),
+        clean_value(data_dict.get("pg_state", "")),
+        clean_value(data_dict.get("pg_year", "")),
+        clean_value(data_dict.get("pg_marks_type", "")),
+        data_dict.get("pg_marks", ""),
+
+        # ================= OTHER COURSE =================
+
+        data_dict.get("HasOtherCourse", ""),
+        data_dict.get("other_course_name", ""),
+        data_dict.get("other_institute_name", ""),
+        clean_value(data_dict.get("other_course_completion_year", "")),
+        data_dict.get("other_course_marks", ""),
+
+        # ================= EXAM =================
+
+        data_dict.get("HasCompetitiveExam", ""),
         data_dict.get("exam_name", ""),
         clean_value(data_dict.get("exam_year", "")),
         data_dict.get("exam_score", ""),
-        data_dict.get("exam_rank", ""),
-        *sem_values,
+        data_dict.get("exam_rank", "")
+    ]
+        # ================= UG SEMESTERS =================
+
+    for sem_no in range(1, 9):
+
+        sem = ug_semesters.get(sem_no, {})
+
+        row.extend([
+            sem.get("college", ""),
+            sem.get("course", ""),
+            clean_value(sem.get("year", "")),
+            clean_value(sem.get("marks_type", "")),
+            sem.get("marks", ""),
+            clean_value(sem.get("state", ""))
+        ])
+
+
+    # ================= PG SEMESTERS =================
+
+    for sem_no in range(1, 9):
+
+        sem = pg_semesters.get(sem_no, {})
+
+        row.extend([
+            sem.get("college", ""),
+            sem.get("course", ""),
+            clean_value(sem.get("year", "")),
+            clean_value(sem.get("marks_type", "")),
+            sem.get("marks", ""),
+            clean_value(sem.get("state", ""))
+        ])
+
+            # ================= INTERNSHIP =================
+
+    row.extend([
+
         data_dict.get("intern_company", ""),
         data_dict.get("intern_role", ""),
         data_dict.get("intern_duration", ""),
-        clean_value(data_dict.get("intern_state", "")),
+        clean_value(data_dict.get("intern_state", ""))
+
+    ])
+
+
+    # ================= PLACEMENT =================
+
+    row.extend([
+
         data_dict.get("Placed", ""),
+
         data_dict.get("company", ""),
         data_dict.get("role", ""),
         data_dict.get("ctc", ""),
+
         data_dict.get("current_address", ""),
-        clean_value(data_dict.get("country", "")),
-        folder_link,
+        clean_value(data_dict.get("country", ""))
+
+    ])
+
+
+    # ================= DRIVE =================
+
+    row.append(folder_link)
+
+
+    # ================= EDUCATION DOCS =================
+
+    row.extend([
+
         uploaded_links.get("doc_10", ""),
         uploaded_links.get("doc_12", ""),
         uploaded_links.get("doc_grad", ""),
-        uploaded_links.get("exam_doc", ""),
-        uploaded_links.get("Semester_1", ""),
-        uploaded_links.get("Semester_2", ""),
-        uploaded_links.get("Semester_3", ""),
-        uploaded_links.get("Semester_4", ""),
-        uploaded_links.get("Semester_5", ""),
-        uploaded_links.get("Semester_6", ""),
-        uploaded_links.get("Semester_7", ""),
-        uploaded_links.get("Semester_8", ""),
+        uploaded_links.get("doc_pg", ""),
+        uploaded_links.get("other_course_doc", ""),
+        uploaded_links.get("exam_doc", "")
+
+    ])
+
+
+    # ================= UG DOCS =================
+
+    for i in range(1, 9):
+
+        row.append(
+
+            uploaded_links.get(f"UG_Semester_{i}", "")
+        )
+
+    # ================= PG DOCS =================
+
+    for i in range(1, 9):
+
+        row.append(
+
+            uploaded_links.get(
+                f"PG_Semester_{i}",
+                ""
+            )
+
+        )
+
+
+    # ================= OTHER DOCS =================
+
+    row.extend([
+
         uploaded_links.get("intern_doc", ""),
         uploaded_links.get("offer_doc", ""),
         uploaded_links.get("address_doc", ""),
-        uploaded_links.get("resume_doc", ""),
+        uploaded_links.get("resume_doc", "")
+
+    ])
+
+
+    # ================= STATUS =================
+
+    row.extend([
+
         form_status,
-        datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    ]
+
+        datetime.now().strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+
+    ])
+
+
+    return row
 
 
 def save_to_sheet(data_dict, folder_link, uploaded_links):
@@ -765,24 +1283,38 @@ def get_section_status(step):
         return "complete"
 
     elif step == 2:
-        required_fields  = [d.get("school_10"), d.get("marks_10"), d.get("school_12"), d.get("marks_12"), d.get("college_grad"), d.get("marks_grad")]
+        required_fields  = [d.get("school_10"), d.get("marks_10"), d.get("school_12"), d.get("marks_12")]
         doc_10_ok   = bool(fs.get("doc_10"))   or bool(saved.get("doc_10"))
         doc_12_ok   = bool(fs.get("doc_12"))   or bool(saved.get("doc_12"))
         doc_grad_ok = bool(fs.get("doc_grad")) or bool(saved.get("doc_grad"))
-        total_required = len(required_fields) + 3
-        total_filled   = sum(1 for x in required_fields if x) + sum([doc_10_ok, doc_12_ok, doc_grad_ok])
+        total_required = len(required_fields) + 2
+        total_filled   = sum(1 for x in required_fields if x) + int(doc_10_ok)+ int(doc_12_ok)
+        if d.get("HasGraduation") == "Yes":
+            required_fields.extend([
+                d.get("college_grad"),
+                d.get("marks_grad")
+            ])
+            doc_grad_ok = (
+                bool(fs.get("doc_grad"))
+                or
+                bool(saved.get("doc_grad"))
+            )
+            total_required += 3
+            total_filled += (
+                sum(1 for x in [d.get("college_grad"), d.get("marks_grad")] if x)+ int(doc_grad_ok)
+            )
         if total_filled == 0:               return "empty"
         if total_filled < total_required:   return "partial"
         return "complete"
 
     elif step == 3:
-        sem = d.get("semester_data", [])
+        sem = d.get("ug_semester_data", [])
         if not sem: return "empty"
         total_required = len(sem) * 2
         filled = 0
         for i, s in enumerate(sem, start=1):
             if s.get("college"): filled += 1
-            if fs.get(f"Semester_{i}") or saved.get(f"Semester_{i}"): filled += 1
+            if fs.get(f"UG_Semester_{i}") or saved.get(f"UG_Semester_{i}"): filled += 1
         if filled == 0:             return "empty"
         if filled < total_required: return "partial"
         return "complete"
@@ -895,23 +1427,58 @@ if st.session_state.step == 1:
         value=st.session_state.student_data.get("Application_ID", "")
     )
 
+    tranche_number = st.selectbox(
+         "Tranche Number",
+         [str(i) for i in range(1, 11)],
+         index=(
+             int(st.session_state.student_data.get("TrancheNumber", "1")) - 1
+              if str(st.session_state.student_data.get("TrancheNumber", "1")).isdigit()
+              else 0
+         )
+    )
+
+    current_tranche = st.session_state.student_data.get("TrancheNumber", "")
+    current_app = st.session_state.student_data.get("Application_ID", "")
+
+    # Only reset if the SAME app id changed tranche after being loaded
+    if current_app == app_id and current_tranche and current_tranche != tranche_number:
+        reset_student_data(app_id, tranche_number)
+        st.session_state.existing_row_index = None
+        st.session_state.drive_folder_id = None
+        st.session_state.saved_links = {}
+        st.session_state.file_store = {}
+        st.session_state.fetch_app_id = ""
+        st.session_state.fetch_tranche = ""
+        st.session_state.data_fetched = False
+        st.session_state.allow_next = False
+        st.warning("⚠️ Tranche changed.\n\nPlease click Fetch Data.")
+        st.rerun()
+
     if st.button("Fetch Data"):
         if not app_id:
             st.error("Please enter an Application ID")
         else:
             # Always check BOTH tabs
-            hed_data  = fetch_application_data(app_id)
-            row_idx, row_data, header_row = fetch_existing_submission(app_id)
+            row_idx, row_data, header_row = fetch_existing_submission(
+                app_id,
+                tranche_number
+            )
 
             if row_idx is not None:
                 # ── Existing submission found ──────────────────────────────
+                st.success(
+                    f"✅ Existing Entry Found (Tranche {tranche_number})\n\n"
+                    "The existing application will be opened for editing."
+                )
+
+                st.session_state.data_fetched = True
+                st.session_state.fetch_app_id = app_id
+                st.session_state.fetch_tranche = tranche_number
+
                 prev_student_data, prev_saved_links = parse_existing_row(row_data, header_row)
 
                 # Merge fresh HED data on top (Name/Mobile/Email/Loan etc.)
-                if hed_data:
-                    for k in ["Name","Mobile","Email","LoanAmount","CourseName","CurrentLoanStatus"]:
-                        if hed_data.get(k):
-                            prev_student_data[k] = hed_data[k]
+                prev_student_data["TrancheNumber"] = tranche_number
 
                 st.session_state.student_data        = prev_student_data
                 st.session_state.saved_links         = prev_saved_links
@@ -926,42 +1493,41 @@ if st.session_state.step == 1:
                 st.session_state.drive_folder_id = folder_id  # may be None if link missing
 
                 # Semester count
-                sem_count = len(prev_student_data.get("semester_data", []))
+                sem_count = len(prev_student_data.get("ug_semester_data", []))
                 if sem_count > 0:
                     st.session_state.semester_count = sem_count
 
                 # Clear stale files from any previous session
                 st.session_state.file_store = {}
                 st.session_state.last_submit_success = None
+                st.session_state.allow_next = True
 
-                folder_msg = "Drive folder restored ✅" if folder_id else "⚠️ Drive folder link missing in sheet — will create new folder on submit"
-                st.success("✅ Your previously saved application has been loaded successfully.")
-
-
-            elif hed_data:
-                # ── New application — only in HED tab ─────────────────────
-                st.session_state.student_data.update(hed_data)
-                st.session_state.saved_links         = {}
-                st.session_state.existing_row_index  = None
-                st.session_state.drive_folder_id     = None
-                st.session_state.file_store          = {}
-                st.session_state.last_submit_success = None
-                st.success("✅ Data Fetched Successfully")
+                if folder_id:
+                    st.success("✅ Your previously saved application has been loaded successfully.")
+                else:
+                    st.warning("⚠️ Drive folder link missing in sheet — will create new folder on submit")
 
             else:
-                st.error("❌ Application ID Not Found")
+                # ── New entry ────────────────────────────────────────────
+                st.info(
+                    f"🆕 New Entry (Tranche {tranche_number})\n\n"
+                    "A new Google Sheet row and a new Drive folder will be created."
+                )
+                reset_student_data(app_id, tranche_number)
+                st.session_state.data_fetched = True
+                st.session_state.fetch_app_id = app_id
+                st.session_state.fetch_tranche = tranche_number
+                st.session_state.allow_next = True
 
-    if st.session_state.existing_row_index:
-        st.info(
-            "📝 Edit Mode: "
-            "You are updating an existing application."
-        )
+    if st.session_state.existing_row_index is not None:
+        st.info("📝 Edit Mode: You are updating an existing application.")
 
 
     name                = st.text_input("Name",                st.session_state.student_data.get("Name", ""))
     mobile              = st.text_input("Mobile",              st.session_state.student_data.get("Mobile", ""))
     email               = st.text_input("Email",               st.session_state.student_data.get("Email", ""))
-    loan_amount         = st.text_input("Loan Amount",         st.session_state.student_data.get("LoanAmount", ""))
+    sanction_loan_amount = st.text_input("Sanction Loan Amount", st.session_state.student_data.get("SanctionLoanAmount", ""))
+    disbursement_tranche_amount = st.text_input("Disbursement / Tranche Amount", st.session_state.student_data.get("DisbursementTrancheAmount", ""))
     course_name         = st.text_input("Course Name",         st.session_state.student_data.get("CourseName", ""))
     current_loan_status = st.text_input("Current Loan Status", st.session_state.student_data.get("CurrentLoanStatus", ""))
 
@@ -970,9 +1536,11 @@ if st.session_state.step == 1:
         "Name":              name,
         "Mobile":            mobile,
         "Email":             email,
-        "LoanAmount":        loan_amount,
         "CourseName":        course_name,
         "CurrentLoanStatus": current_loan_status,
+        "TrancheNumber": tranche_number,
+        "SanctionLoanAmount": sanction_loan_amount,
+        "DisbursementTrancheAmount": disbursement_tranche_amount,
     })
 
 # ================= STEP 2: Education =================
@@ -1029,41 +1597,267 @@ elif st.session_state.step == 2:
 
     # ── Graduation ────────────────────────────────────────────────────────
     st.subheader("Graduation Details")
-    college_grad    = st.text_input("Graduation College", value=st.session_state.student_data.get("college_grad", ""))
-    university_grad = st.text_input("University Name",    value=st.session_state.student_data.get("university_grad", ""))
 
-    year_grad_val = st.session_state.student_data.get("year_grad", "Select Year")
-    year_grad = st.selectbox("Year of Passing (Graduation)", year_options,
-        index=year_options.index(year_grad_val) if year_grad_val in year_options else 0)
+    has_graduation = st.selectbox(
+        "Do you have Graduation?",
+        ["No", "Yes"],
+        index=1 if st.session_state.student_data.get("HasGraduation","No") == "Yes" else 0
+    )
+    st.session_state.student_data["HasGraduation"] = has_graduation
+    college_grad = ""
+    university_grad = ""
+    state_grad = ""
+    year_grad = ""
+    marks_type_grad = ""
+    marks_grad = ""
 
-    marks_type_grad = st.selectbox("Marks Type (Graduation)", marks_type_options,
-        index=marks_type_options.index(st.session_state.student_data.get("marks_type_grad", "Select"))
+    if has_graduation == "Yes":
+       college_grad    = st.text_input("Graduation College", value=st.session_state.student_data.get("college_grad", ""))
+       university_grad = st.text_input("University Name",    value=st.session_state.student_data.get("university_grad", ""))
+
+       year_grad_val = st.session_state.student_data.get("year_grad", "Select Year")
+       year_grad = st.selectbox("Year of Passing (Graduation)", year_options,
+           index=year_options.index(year_grad_val) if year_grad_val in year_options else 0)
+
+       marks_type_grad = st.selectbox("Marks Type (Graduation)", marks_type_options,
+           index=marks_type_options.index(st.session_state.student_data.get("marks_type_grad", "Select"))
               if st.session_state.student_data.get("marks_type_grad") in marks_type_options else 0)
 
-    state_grad = st.selectbox("State (Graduation)", states_list,
-        index=states_list.index(st.session_state.student_data.get("state_grad", "Select State"))
+       state_grad = st.selectbox("State (Graduation)", states_list,
+           index=states_list.index(st.session_state.student_data.get("state_grad", "Select State"))
               if st.session_state.student_data.get("state_grad") in states_list else 0)
 
-    marks_grad = st.text_input("Final Percentage / CGPA", value=st.session_state.student_data.get("marks_grad", ""))
+       marks_grad = st.text_input("Final Percentage / CGPA", value=st.session_state.student_data.get("marks_grad", ""))
 
-    file_status_display("doc_grad", saved.get("doc_grad"), "Graduation Marksheet")
-    _f = validate_file(st.file_uploader("Upload Graduation Marksheet", key="doc_grad"))
-    persist_file("doc_grad", _f)
+       file_status_display("doc_grad", saved.get("doc_grad"), "Graduation Marksheet")
+       _f = validate_file(st.file_uploader("Upload Graduation Marksheet", key="doc_grad"))
+       persist_file("doc_grad", _f)
+
+    # ================= POST GRADUATION =================
+
+    st.subheader("Post Graduation Details")
+    
+    has_pg = st.selectbox(
+    "Do you have Post Graduation?",
+    ["No", "Yes"],
+    index=1 if st.session_state.student_data.get("HasPostGraduation") == "Yes" else 0
+)
+
+    st.session_state.student_data["HasPostGraduation"] = has_pg
+    
+    # Default values (to avoid NameError when PG = No)
+    pg_college = ""
+    pg_university = ""
+    pg_state = ""
+    pg_year = ""
+    pg_marks_type = ""
+    pg_marks = ""
+
+    if has_pg == "Yes":
+
+     pg_college = st.text_input(
+        "PG College",
+        value=st.session_state.student_data.get("pg_college", "")
+    )
+
+     pg_university = st.text_input(
+        "PG University",
+        value=st.session_state.student_data.get("pg_university", "")
+    )
+
+     pg_state = st.selectbox(
+        "PG State",
+        states_list,
+        index=states_list.index(
+            st.session_state.student_data.get(
+                "pg_state",
+                "Select State"
+            )
+        )
+        if st.session_state.student_data.get(
+            "pg_state"
+        ) in states_list
+        else 0
+    )
+
+     pg_year = st.selectbox(
+        "PG Passing Year",
+        year_options,
+        index=year_options.index(
+            st.session_state.student_data.get(
+                "pg_year",
+                "Select Year"
+            )
+        )
+        if st.session_state.student_data.get(
+            "pg_year"
+        ) in year_options
+        else 0
+    )
+
+     pg_marks_type = st.selectbox(
+        "PG Marks Type",
+        marks_type_options,
+        index=marks_type_options.index(
+            st.session_state.student_data.get(
+                "pg_marks_type",
+                "Select"
+            )
+        )
+        if st.session_state.student_data.get(
+            "pg_marks_type"
+        ) in marks_type_options
+        else 0
+    )
+
+     pg_marks = st.text_input(
+        "PG Marks",
+        value=st.session_state.student_data.get(
+            "pg_marks",
+            ""
+        )
+    )
+
+     file_status_display(
+        "doc_pg",
+        saved.get("doc_pg"),
+        "PG Marksheet"
+    )
+
+     _f = validate_file(
+        st.file_uploader(
+            "Upload PG Marksheet",
+            key="doc_pg"
+        )
+    )
+
+     persist_file(
+        "doc_pg",
+        _f
+    )
+
+    st.session_state.student_data.update({
+
+        "pg_college": pg_college,
+        "pg_university": pg_university,
+        "pg_state": pg_state,
+        "pg_year": pg_year,
+        "pg_marks_type": pg_marks_type,
+        "pg_marks": pg_marks,
+
+    })
+
+    # ================= OTHER COURSE =================
+
+    st.subheader("Other Course (Optional)")
+    has_other_course = st.selectbox(
+        "Do you have any Other Course?",
+         ["No", "Yes"],
+         index=1 if st.session_state.student_data.get("HasOtherCourse") == "Yes" else 0
+    )
+    st.session_state.student_data["HasOtherCourse"] = has_other_course
+
+    other_course_name = ""
+    other_institute_name = ""
+    other_course_completion_year = ""
+    other_course_marks = ""
+
+    if has_other_course == "Yes":
+       
+       other_course_name = st.text_input(
+           "Course Name",
+           value=st.session_state.student_data.get(
+               "other_course_name",
+                ""
+              )
+       )
+
+       other_institute_name = st.text_input(
+           "Institute Name",
+           value=st.session_state.student_data.get(
+               "other_institute_name",
+                ""
+              )
+       )
+
+       other_course_completion_year = st.selectbox(
+           "Completion Year",
+           year_options,
+           index=year_options.index(
+               st.session_state.student_data.get(
+                   "other_course_completion_year",
+                   "Select Year"
+               )
+           )
+
+           if st.session_state.student_data.get(
+               "other_course_completion_year"
+               ) in year_options
+               else 0
+       )
+
+       other_course_marks = st.text_input(
+           "Marks / Grade",
+           value=st.session_state.student_data.get(
+                "other_course_marks",
+                ""
+              )
+       )
+
+       file_status_display(
+           "other_course_doc",
+           saved.get("other_course_doc"),
+           "Other Course Certificate"
+       )
+
+       _f = validate_file(
+           st.file_uploader(
+               "Upload Other Course Certificate",
+               key="other_course_doc"
+              )
+       )
+
+       persist_file(
+           "other_course_doc",
+           _f
+       )
+
+    st.session_state.student_data.update({
+
+    "other_course_name": other_course_name,
+    "other_institute_name": other_institute_name,
+    "other_course_completion_year": other_course_completion_year,
+    "other_course_marks": other_course_marks,
+
+})
 
     # ── Competitive Exam ──────────────────────────────────────────────────
     st.subheader("Competitive Exam Details")
-    exam_name = st.text_input("Exam Name", value=st.session_state.student_data.get("exam_name", ""))
+    has_exam = st.selectbox(
+        "Have you appeared for any Competitive Exam?",
+        ["No", "Yes"],
+        index=1 if st.session_state.student_data.get("HasCompetitiveExam","No") == "Yes" else 0
+    )
+    st.session_state.student_data["HasCompetitiveExam"] = has_exam
 
-    exam_year_val = st.session_state.student_data.get("exam_year", "Select Year")
-    exam_year = st.selectbox("Exam Year", year_options,
+    exam_name = ""
+    exam_year = ""
+    exam_score = ""
+    exam_rank = ""
+
+    if has_exam == "Yes":
+      exam_name = st.text_input("Exam Name", value=st.session_state.student_data.get("exam_name", ""))
+
+      exam_year_val = st.session_state.student_data.get("exam_year", "Select Year")
+      exam_year = st.selectbox("Exam Year", year_options,
         index=year_options.index(exam_year_val) if exam_year_val in year_options else 0)
 
-    exam_score = st.text_input("Score", value=st.session_state.student_data.get("exam_score", ""))
-    exam_rank  = st.text_input("Rank",  value=st.session_state.student_data.get("exam_rank", ""))
+      exam_score = st.text_input("Score", value=st.session_state.student_data.get("exam_score", ""))
+      exam_rank  = st.text_input("Rank",  value=st.session_state.student_data.get("exam_rank", ""))
 
-    file_status_display("exam_doc", saved.get("exam_doc"), "Exam Scorecard")
-    _f = validate_file(st.file_uploader("Upload Scorecard", key="exam_doc"))
-    persist_file("exam_doc", _f)
+      file_status_display("exam_doc", saved.get("exam_doc"), "Exam Scorecard")
+      _f = validate_file(st.file_uploader("Upload Scorecard", key="exam_doc"))
+      persist_file("exam_doc", _f)
 
     st.session_state.student_data.update({
         "school_10": school_10, "board_10": board_10, "state_10": state_10,
@@ -1072,7 +1866,23 @@ elif st.session_state.step == 2:
         "year_12": year_12, "marks_type_12": marks_type_12, "marks_12": marks_12,
         "college_grad": college_grad, "university_grad": university_grad, "state_grad": state_grad,
         "year_grad": year_grad, "marks_type_grad": marks_type_grad, "marks_grad": marks_grad,
+        "HasCompetitiveExam": has_exam,
         "exam_name": exam_name, "exam_year": exam_year, "exam_score": exam_score, "exam_rank": exam_rank,
+        "HasGraduation": has_graduation,
+        "HasPostGraduation": has_pg,
+
+        "pg_college": pg_college,
+        "pg_university": pg_university,
+        "pg_state": pg_state,
+        "pg_year": pg_year,
+        "pg_marks_type": pg_marks_type,
+        "pg_marks": pg_marks,
+
+        "HasOtherCourse": has_other_course,
+        "other_course_name": other_course_name,
+        "other_institute_name": other_institute_name,
+        "other_course_completion_year": other_course_completion_year,
+        "other_course_marks": other_course_marks,
     })
 
 # ================= STEP 3: Semesters =================
@@ -1080,34 +1890,48 @@ elif st.session_state.step == 2:
 elif st.session_state.step == 3:
     saved = st.session_state.saved_links
     st.subheader("Course Progression - Semester Wise")
+    st.markdown("### 🎓 Under Graduation Semester Details")
 
-    semester_data    = st.session_state.student_data.get("semester_data", [])
+    semester_data    = st.session_state.student_data.get("ug_semester_data", [])
     updated_semesters = []
+# ================= PG SEMESTER INIT =================
+
+    pg_semester_data = st.session_state.student_data.get(
+    "pg_semester_data",
+    []
+)
+
+    updated_pg_semesters = []
+
+    has_pg = st.session_state.student_data.get(
+    "HasPostGraduation",
+    "No"
+)
 
     for i in range(1, st.session_state.semester_count + 1):
-        st.markdown(f"### Semester {i}")
+        st.markdown(f"### UG Semester {i}")
         existing = semester_data[i-1] if len(semester_data) >= i else {}
 
-        college_name   = st.text_input(f"College Name (Semester {i})", value=existing.get("college", ""),    key=f"sem_college_{i}")
-        course_name_s  = st.text_input(f"Course Name (Semester {i})",  value=existing.get("course", ""),     key=f"sem_course_{i}")
+        college_name   = st.text_input(f"UG College (Semester {i})", value=existing.get("college", ""),    key=f"sem_college_{i}")
+        course_name_s  = st.text_input(f"UG Course (Semester {i})",  value=existing.get("course", ""),     key=f"sem_course_{i}")
 
-        year_sem = st.selectbox(f"Year (Semester {i})", year_options,
+        year_sem = st.selectbox(f"UG Year (Semester {i})", year_options,
             index=year_options.index(existing.get("year", "Select Year")) if existing.get("year") in year_options else 0,
             key=f"sem_year_{i}")
 
-        marks_type_sem = st.selectbox(f"Marks Type (Semester {i})", marks_type_options,
+        marks_type_sem = st.selectbox(f"UG Marks Type (Semester {i})", marks_type_options,
             index=marks_type_options.index(existing.get("marks_type", "Select")) if existing.get("marks_type") in marks_type_options else 0,
             key=f"sem_marks_type_{i}")
 
-        sem_marks = st.text_input(f"Marks (Semester {i})", value=existing.get("marks", ""), key=f"sem_marks_{i}")
+        sem_marks = st.text_input(f"UG Marks (Semester {i})", value=existing.get("marks", ""), key=f"sem_marks_{i}")
 
-        state_sem = st.selectbox(f"State (Semester {i})", states_list,
+        state_sem = st.selectbox(f"UG State (Semester {i})", states_list,
             index=states_list.index(existing.get("state", "Select State")) if existing.get("state") in states_list else 0,
             key=f"sem_state_{i}")
 
-        sem_key = f"Semester_{i}"
-        file_status_display(sem_key, saved.get(sem_key), f"Semester {i} Marksheet")
-        _f = validate_file(st.file_uploader(f"Semester {i} Marksheet", key=f"sem_doc_{i}"))
+        sem_key = f"UG_Semester_{i}"
+        file_status_display(sem_key, saved.get(sem_key), f"UG Semester {i} Marksheet")
+        _f = validate_file(st.file_uploader(f"UG Semester {i} Marksheet", key=f"sem_doc_{i}"))
         persist_file(sem_key, _f)
 
         updated_semesters.append({
@@ -1121,11 +1945,121 @@ elif st.session_state.step == 3:
             "doc":        None
         })
 
-    st.session_state.student_data["semester_data"] = updated_semesters
+    st.session_state.student_data["ug_semester_data"] = updated_semesters
+# ================= PG SEMESTERS =================
+
+    if has_pg == "Yes":
+
+      st.markdown("---")
+      st.subheader("Post Graduation Semester Details")
+
+      for i in range(1, st.session_state.semester_count + 1):
+
+        st.markdown(f"### PG Semester {i}")
+
+        existing = (
+            pg_semester_data[i-1]
+            if len(pg_semester_data) >= i
+            else {}
+        )
+
+        college_name = st.text_input(
+            f"PG College (Semester {i})",
+            value=existing.get("college", ""),
+            key=f"pg_sem_college_{i}"
+        )
+
+        course_name = st.text_input(
+            f"PG Course (Semester {i})",
+            value=existing.get("course", ""),
+            key=f"pg_sem_course_{i}"
+        )
+
+        year = st.selectbox(
+            f"PG Year (Semester {i})",
+            year_options,
+            index=year_options.index(
+                existing.get(
+                    "year",
+                    "Select Year"
+                )
+            )
+            if existing.get("year") in year_options
+            else 0,
+            key=f"pg_sem_year_{i}"
+        )
+
+        marks_type = st.selectbox(
+            f"PG Marks Type (Semester {i})",
+            marks_type_options,
+            index=marks_type_options.index(
+                existing.get("marks_type", "Select")
+            )
+            if existing.get("marks_type") in marks_type_options
+            else 0,
+            key=f"pg_sem_marks_type_{i}"
+        )
+
+        marks = st.text_input(
+            f"PG Marks (Semester {i})",
+            value=existing.get("marks", ""),
+            key=f"pg_sem_marks_{i}"
+        )
+
+        state = st.selectbox(
+            f"PG State (Semester {i})",
+            states_list,
+            index=states_list.index(
+                existing.get("state", "Select State")
+            )
+            if existing.get("state") in states_list
+            else 0,
+            key=f"pg_sem_state_{i}"
+        )
+
+        pg_doc_key = f"PG_Semester_{i}"
+
+        file_status_display(
+            pg_doc_key,
+            saved.get(pg_doc_key),
+            f"PG Semester {i} Marksheet"
+        )
+
+        _f = validate_file(
+            st.file_uploader(
+                f"Upload PG Semester {i} Marksheet",
+                key=f"pg_sem_doc_{i}"
+            )
+        )
+
+        persist_file(
+            pg_doc_key,
+            _f
+        )
+
+        updated_pg_semesters.append({
+
+            "sem_no": i,
+
+            "college": college_name,
+
+            "course": course_name,
+
+            "year": year,
+
+            "marks_type": marks_type,
+
+            "marks": marks,
+
+            "state": state
+
+        })
+
+    st.session_state.student_data["pg_semester_data"] = updated_pg_semesters
 
     colA, colB = st.columns(2)
     with colA:
-        if st.button("➕ Add Semester") and st.session_state.semester_count < 10:
+        if st.button("➕ Add Semester") and st.session_state.semester_count < 8:
             st.session_state.semester_count += 1
             st.rerun()
     with colB:
@@ -1197,76 +2131,313 @@ elif st.session_state.step == 5:
         })
 
 # ================= STEP 6: Review & Submit =================
-
 elif st.session_state.step == 6:
+
     st.subheader("📋 Complete Application Review")
 
-    data  = st.session_state.student_data
+    data = st.session_state.student_data
     saved = st.session_state.saved_links
-    fs    = st.session_state.file_store
+    fs = st.session_state.file_store
 
-    if st.session_state.existing_row_index:
-        st.info("📝 **Update Mode** — Submitting will update the existing record.")
+    if st.session_state.existing_row_index is not None:
+        st.info("📝 Edit Mode : Existing application will be updated.")
 
-    # ── Basic ──────────────────────────────────────────────────────────────
-    st.markdown("### 🧾 Basic Information")
-    for label, key in [("Application ID","Application_ID"),("Name","Name"),("Mobile","Mobile"),
-                        ("Email","Email"),("Loan Amount","LoanAmount"),("Course","CourseName"),
-                        ("Loan Status","CurrentLoanStatus")]:
-        st.write(f"{label}:", data.get(key, ""))
-    st.markdown("---")
+    # =========================================================
+    # BASIC
+    # =========================================================
 
-    # ── Education ──────────────────────────────────────────────────────────
-    st.markdown("### 🎓 Education Details")
-    st.write("10th:",       data.get("school_10",""), "-", data.get("marks_10",""), "-", data.get("state_10",""))
-    st.write("12th:",       data.get("school_12",""), "-", data.get("marks_12",""), "-", data.get("state_12",""))
-    st.write("Graduation:", data.get("college_grad",""), "-", data.get("marks_grad",""), "-", data.get("state_grad",""))
-    st.write("Exam:",       data.get("exam_name",""), "-", data.get("exam_score",""))
+    st.markdown("## 🧾 Basic Information")
 
-    st.markdown("**Documents:**")
-    for key, label in [("doc_10","10th Marksheet"),("doc_12","12th Marksheet"),
-                        ("doc_grad","Graduation Marksheet"),("exam_doc","Exam Scorecard")]:
-        if fs.get(key):
-            st.write(f"  ✅ {label}: new — `{fs[key]['name']}`")
-        elif saved.get(key):
-            st.write(f"  📎 {label}: [View]({saved[key]})")
+    c1, c2 = st.columns(2)
+
+    with c1:
+        st.write("**Application ID**")
+        st.write(data.get("Application_ID", ""))
+
+        st.write("**Name**")
+        st.write(data.get("Name", ""))
+
+        st.write("**Mobile**")
+        st.write(data.get("Mobile", ""))
+
+        st.write("**Email**")
+        st.write(data.get("Email", ""))
+
+    with c2:
+
+        st.write("**Course**")
+        st.write(data.get("CourseName", ""))
+
+        st.write("**Current Loan Status**")
+        st.write(data.get("CurrentLoanStatus", ""))
+
+        st.write("**Tranche Number**")
+        st.write(data.get("TrancheNumber", ""))
+
+        st.write("**Sanction Amount**")
+        st.write(data.get("SanctionLoanAmount", ""))
+
+        st.write("**Disbursement Amount**")
+        st.write(data.get("DisbursementTrancheAmount", ""))
+
+    st.divider()
+
+    # =========================================================
+    # EDUCATION
+    # =========================================================
+
+    st.markdown("## 🎓 Education")
+
+    st.markdown("### 10th")
+
+    st.write("School :", data.get("school_10",""))
+    st.write("Board :", data.get("board_10",""))
+    st.write("State :", data.get("state_10",""))
+    st.write("Year :", data.get("year_10",""))
+    st.write("Marks :", data.get("marks_10",""))
+    st.write("Marks Type :",data.get("marks_type_10",""))
+
+    if fs.get("doc_10"):
+        st.success(f"✅ {fs['doc_10']['name']}")
+    elif saved.get("doc_10"):
+        st.markdown(f"📄 [View Document]({saved['doc_10']})")
+    else:
+        st.warning("10th Marksheet Missing")
+
+    st.divider()
+
+    st.markdown("### 12th")
+
+    st.write("School :", data.get("school_12",""))
+    st.write("Board :", data.get("board_12",""))
+    st.write("State :", data.get("state_12",""))
+    st.write("Year :", data.get("year_12",""))
+    st.write("Marks :", data.get("marks_12",""))
+    st.write("Marks Type :",data.get("marks_type_12",""))
+
+    if fs.get("doc_12"):
+        st.success(f"✅ {fs['doc_12']['name']}")
+    elif saved.get("doc_12"):
+        st.markdown(f"📄 [View Document]({saved['doc_12']})")
+    else:
+        st.warning("12th Marksheet Missing")
+
+    st.divider()
+
+    if data.get("HasGraduation") == "Yes":
+       st.markdown("### Graduation")
+
+       st.write("College :", data.get("college_grad",""))
+       st.write("University :", data.get("university_grad",""))
+       st.write("State :", data.get("state_grad",""))
+       st.write("Year :", data.get("year_grad",""))
+       st.write("Marks :", data.get("marks_grad",""))
+       st.write("Marks Type :", data.get("marks_type_grad",""))
+
+       if fs.get("doc_grad"):
+           st.success(f"✅ {fs['doc_grad']['name']}")
+       elif saved.get("doc_grad"):
+           st.markdown(f"📄 [View Document]({saved['doc_grad']})")
+       else:
+           st.warning("Graduation Marksheet Missing")
+
+           st.divider()
+           
+    if data.get("HasPostGraduation") == "Yes":
+
+        st.divider()
+
+        st.markdown("### Post Graduation")
+
+        st.write("College :", data.get("pg_college",""))
+        st.write("University :", data.get("pg_university",""))
+        st.write("State :", data.get("pg_state",""))
+        st.write("Year :", data.get("pg_year",""))
+        st.write("Marks :", data.get("pg_marks",""))
+        st.write("Marks Type :", data.get("pg_marks_type",""))
+
+        if fs.get("doc_pg"):
+            st.success(f"✅ {fs['doc_pg']['name']}")
+        elif saved.get("doc_pg"):
+            st.markdown(f"📄 [View Document]({saved['doc_pg']})")
         else:
-            st.write(f"  ⚠️ {label}: missing")
-    st.markdown("---")
+            st.warning("PG Marksheet Missing")
 
-    # ── Semesters ──────────────────────────────────────────────────────────
-    st.markdown("### 📚 Semester Details")
-    for sem in data.get("semester_data", []):
-        sk  = f"Semester_{sem.get('sem_no')}"
-        doc = "✅ new" if fs.get(sk) else ("📎 saved" if saved.get(sk) else "⚠️ missing")
-        st.write(f"Sem {sem.get('sem_no','')}: {sem.get('college','')} — {sem.get('marks','')} | Doc: {doc}")
-    st.markdown("---")
+        st.divider()
 
-    # ── Internship ─────────────────────────────────────────────────────────
-    st.markdown("### 💼 Internship")
-    st.write("Company:", data.get("intern_company",""))
-    st.write("Role:",    data.get("intern_role",""))
-    cert = "✅ new" if fs.get("intern_doc") else ("📎 saved" if saved.get("intern_doc") else "⚠️ missing")
-    st.write("Certificate:", cert)
-    st.markdown("---")
+        if data.get("HasOtherCourse") == "Yes":
+           st.markdown("### Other Course")
 
-    # ── Placement ──────────────────────────────────────────────────────────
-    st.markdown("### 🏢 Placement")
-    st.write("Placed:", data.get("Placed",""))
+           st.write("Course :", data.get("other_course_name",""))
+           st.write("Institute :", data.get("other_institute_name",""))
+           st.write("Completion Year :", data.get("other_course_completion_year",""))
+           st.write("Marks :", data.get("other_course_marks",""))
+
+           if fs.get("other_course_doc"):
+               st.success(f"✅ {fs['other_course_doc']['name']}")
+           elif saved.get("other_course_doc"):
+               st.markdown(f"📄 [View Certificate]({saved['other_course_doc']})")
+           else:
+               st.warning("Certificate Missing")
+
+           st.divider()
+
+    if data.get("HasCompetitiveExam") == "Yes":
+       st.markdown("### Competitive Exam")
+
+       st.write("Exam :", data.get("exam_name",""))
+       st.write("Year :", data.get("exam_year",""))
+       st.write("Score :", data.get("exam_score",""))
+       st.write("Rank :", data.get("exam_rank",""))
+
+       if fs.get("exam_doc"):
+          st.success(f"✅ {fs['exam_doc']['name']}")
+       elif saved.get("exam_doc"):
+          st.markdown(f"📄 [View Score Card]({saved['exam_doc']})")
+       else:
+          st.warning("Score Card Missing")
+
+       st.divider()
+
+    # =========================================================
+    # UG SEMESTERS
+    # =========================================================
+
+    st.markdown("## 📚 UG Semester Details")
+
+    for sem in data.get("ug_semester_data", []):
+
+        sem_no = sem.get("sem_no")
+
+        st.markdown(f"### UG Semester {sem_no}")
+
+        st.write("College :", sem.get("college",""))
+        st.write("Course :", sem.get("course",""))
+        st.write("Year :", sem.get("year",""))
+        st.write("Marks :", sem.get("marks",""))
+        st.write("State :", sem.get("state",""))
+        st.write("Marks Type :", sem.get("marks_type",""))
+
+        key = f"UG_Semester_{sem_no}"
+
+        if fs.get(key):
+            st.success(f"✅ {fs[key]['name']}")
+        elif saved.get(key):
+            st.markdown(f"📄 [View Document]({saved[key]})")
+        else:
+            st.warning("Document Missing")
+
+        # =========================================================
+    # PG SEMESTERS
+    # =========================================================
+
+    if data.get("HasPostGraduation") == "Yes":
+
+        st.divider()
+        st.markdown("## 🎓 PG Semester Details")
+
+        for sem in data.get("pg_semester_data", []):
+
+            sem_no = sem.get("sem_no")
+
+            st.markdown(f"### PG Semester {sem_no}")
+
+            st.write("College :", sem.get("college", ""))
+            st.write("Course :", sem.get("course", ""))
+            st.write("Year :", sem.get("year", ""))
+            st.write("Marks :", sem.get("marks", ""))
+            st.write("State :", sem.get("state",""))
+            st.write("Marks Type :", sem.get("marks_type", ""))
+
+            key = f"PG_Semester_{sem_no}"
+
+            if fs.get(key):
+                st.success(f"✅ {fs[key]['name']}")
+            elif saved.get(key):
+                st.markdown(f"📄 [View Document]({saved[key]})")
+            else:
+                st.warning("Document Missing")
+
+    st.divider()
+
+    # =========================================================
+    # INTERNSHIP
+    # =========================================================
+
+    st.markdown("## 💼 Internship")
+
+    st.write("Company :", data.get("intern_company", ""))
+    st.write("Role :", data.get("intern_role", ""))
+    st.write("Duration :", data.get("intern_duration", ""))
+    st.write("State :", data.get("intern_state", ""))
+
+    if fs.get("intern_doc"):
+        st.success(f"✅ {fs['intern_doc']['name']}")
+    elif saved.get("intern_doc"):
+        st.markdown(f"📄 [View Internship Certificate]({saved['intern_doc']})")
+    else:
+        st.warning("Internship Certificate Missing")
+
+    st.divider()
+
+    # =========================================================
+    # PLACEMENT
+    # =========================================================
+
+    st.markdown("## 🏢 Placement")
+
+    st.write("Placed :", data.get("Placed", ""))
+
     if data.get("Placed") == "Yes":
-        st.write("Company:", data.get("company",""))
-        st.write("Role:",    data.get("role",""))
-        for key, label in [("offer_doc","Offer Letter"),("address_doc","Address Proof"),("resume_doc","Resume")]:
-            status = "✅ new" if fs.get(key) else ("📎 saved" if saved.get(key) else "⚠️ missing")
-            st.write(f"{label}: {status}")
-    st.markdown("---")
 
-    # ── Success banner ─────────────────────────────────────────────────────
+        st.write("Company :", data.get("company", ""))
+        st.write("Role :", data.get("role", ""))
+        st.write("CTC :", data.get("ctc", ""))
+        st.write("Current Address :", data.get("current_address", ""))
+        st.write("Country :", data.get("country", ""))
+
+        docs = [
+            ("offer_doc", "Offer Letter"),
+            ("address_doc", "Address Proof"),
+            ("resume_doc", "Resume"),
+        ]
+
+        for key, label in docs:
+
+            if fs.get(key):
+                st.success(f"✅ {label}: {fs[key]['name']}")
+            elif saved.get(key):
+                st.markdown(f"📄 {label}: [View Document]({saved[key]})")
+            else:
+                st.warning(f"{label} Missing")
+
+    st.divider()
+
+    # =========================================================
+    # SUBMISSION STATUS
+    # =========================================================
+
     if st.session_state.get("last_submit_success"):
         st.success(st.session_state.last_submit_success)
 
-    # ── Final Submit ───────────────────────────────────────────────────────
+    # ================= FINAL SUBMIT BUTTON =================        
+
     if st.button("✅ Final Submit"):
+        current_app = data.get("Application_ID", "")
+        current_tranche = data.get("TrancheNumber", "")
+
+        # User changed App ID / Tranche but didn't fetch again
+        if (
+            st.session_state.fetch_app_id != current_app
+            or
+            st.session_state.fetch_tranche != current_tranche
+            ):
+            st.error(
+                "⚠️ Application ID or Tranche Number has changed.\n\n"
+                "Please click 'Fetch Data' before Final Submit."
+            )
+            st.stop()
+        ensure_sheet_headers()
         invalid_files = validate_all_uploaded_files()
         if invalid_files:
             file_names = []
@@ -1320,18 +2491,62 @@ elif st.session_state.step == 6:
 
             # Step 3: Upload only NEW files from file_store
             all_doc_keys = [
-                "doc_10", "doc_12", "doc_grad", "exam_doc",
-                "intern_doc", "offer_doc", "address_doc", "resume_doc"
-            ]
+                "doc_10",
+                "doc_12",
+                "doc_grad",
+                "doc_pg",
+                "other_course_doc",
+                "exam_doc",
+                "intern_doc",
+                "offer_doc",
+                "address_doc",
+                "resume_doc",
+
+                "UG_Semester_1",
+                "UG_Semester_2",
+                "UG_Semester_3",
+                "UG_Semester_4",
+                "UG_Semester_5",
+                "UG_Semester_6",
+                "UG_Semester_7",
+                "UG_Semester_8",
+
+                "PG_Semester_1",
+                "PG_Semester_2",
+                "PG_Semester_3",
+                "PG_Semester_4",
+                "PG_Semester_5",
+                "PG_Semester_6",
+                "PG_Semester_7",
+                "PG_Semester_8",
+]
             doc_name_mapping = {
                 "doc_10": "10th Doc",
                 "doc_12": "12th Doc",
                 "doc_grad": "Graduation Doc",
+                "doc_pg": "Post Graduation Doc",
+                "other_course_doc": "Other Course Certificate",
                 "exam_doc": "Exam Doc",
                 "intern_doc": "Intern Doc",
                 "offer_doc": "Offer Letter",
                 "address_doc": "Address Proof",
-                "resume_doc": "Resume"
+                "resume_doc": "Resume",
+                "UG_Semester_1": "UG Semester 1",
+                "UG_Semester_2": "UG Semester 2",
+                "UG_Semester_3": "UG Semester 3",
+                "UG_Semester_4": "UG Semester 4",
+                "UG_Semester_5": "UG Semester 5",
+                "UG_Semester_6": "UG Semester 6",
+                "UG_Semester_7": "UG Semester 7",
+                "UG_Semester_8": "UG Semester 8",
+                "PG_Semester_1": "PG Semester 1",
+                "PG_Semester_2": "PG Semester 2",
+                "PG_Semester_3": "PG Semester 3",
+                "PG_Semester_4": "PG Semester 4",
+                "PG_Semester_5": "PG Semester 5",
+                "PG_Semester_6": "PG Semester 6",
+                "PG_Semester_7": "PG Semester 7",
+                "PG_Semester_8": "PG Semester 8"
             }
             for key in all_doc_keys:
                 if key in st.session_state.file_store:
@@ -1359,9 +2574,9 @@ elif st.session_state.step == 6:
                         uploaded_links[key] = link
 
             # Semester docs
-            for sem in data.get("semester_data", []):
+            for sem in data.get("ug_semester_data", []):
                 sem_no = sem.get("sem_no")
-                sem_key = f"Semester_{sem_no}"
+                sem_key = f"UG_Semester_{sem_no}"
                 if sem_key in st.session_state.file_store:
                     file_obj = get_stored_file(sem_key)
                     if file_obj:
@@ -1372,7 +2587,7 @@ elif st.session_state.step == 6:
                             file_obj.name
                         )[1]
                         fixed_name = (
-                            f"Semester_{sem_no} Doc{ext}"
+                            f"UG Semester{sem_no} Doc{ext}"
                         )
                         link = upload_file_to_drive(
                             file_obj,
@@ -1383,36 +2598,66 @@ elif st.session_state.step == 6:
                         uploaded_links[sem_key] = link
 
             # Step 4: Save or update sheet row
-            if st.session_state.existing_row_index:
+            row_idx, _, _ = fetch_existing_submission(
+                data.get("Application_ID", ""),
+                data.get("TrancheNumber", "")
+            )
+            if row_idx:
                 update_sheet_row(
-                    st.session_state.existing_row_index,
-                    data, folder_link, uploaded_links
+                    row_idx,
+                    data,
+                    folder_link,
+                    uploaded_links
                 )
                 msg = "🎉 Application Updated Successfully!"
+
             else:
-                save_to_sheet(data, folder_link, uploaded_links)
+                save_to_sheet(
+                    data,
+                    folder_link,
+                    uploaded_links
+                )
+
                 msg = "🎉 Application Submitted Successfully!"
 
-            st.session_state.last_submit_success = msg
 
             # Step 5: Update session state so next submit is correct
             st.session_state.drive_folder_id = folder_id
             st.session_state.saved_links["folder_link"] = folder_link
             st.session_state.saved_links.update(uploaded_links)
 
+            st.session_state.fetch_app_id = data.get(
+                "Application_ID",
+                ""
+            )
+
+            st.session_state.fetch_tranche = data.get(
+                "TrancheNumber",
+                ""
+            )
+
+            st.session_state.data_fetched = True
+
             # If new submission, fetch the row index for future updates
             if not st.session_state.existing_row_index:
-                new_row_idx, _, _ = fetch_existing_submission(data.get("Application_ID", ""))
+                new_row_idx, _, _ = fetch_existing_submission(
+                    data.get("Application_ID", ""),
+                    data.get("TrancheNumber", "")
+                )
                 if new_row_idx:
                     st.session_state.existing_row_index = new_row_idx
 
             # Clear only file_store (not saved_links) after successful save
             st.session_state.file_store = {}
 
+            # Persist success message so it survives the rerun below
+            st.session_state.last_submit_success = msg
+
             st.rerun()
 
         except Exception as e:
-            st.error(f"Submission Failed: {e}")
+            st.session_state.last_submit_success = None
+            st.error(f"❌ Submission Failed: {e}")
 
 # ================= BOTTOM NAVIGATION =================
 
@@ -1420,6 +2665,16 @@ c1, c2 = st.columns(2)
 if c1.button("⬅ Back") and st.session_state.step > 1:
     st.session_state.step -= 1
     st.rerun()
-if c2.button("Next ➡") and st.session_state.step < 6:
-    st.session_state.step += 1
-    st.rerun()
+if c2.button("Next ➡"):
+    if (
+        st.session_state.step == 1
+        and
+        not st.session_state.allow_next
+    ):
+        st.error(
+            "Please click Fetch Data first."
+        )
+
+    elif st.session_state.step < 6:
+            st.session_state.step += 1
+            st.rerun()
