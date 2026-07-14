@@ -2286,22 +2286,22 @@ elif st.session_state.step == 6:
 
         st.divider()
 
-        if data.get("HasOtherCourse") == "Yes":
-           st.markdown("### Other Course")
+    if data.get("HasOtherCourse") == "Yes":
+       st.markdown("### Other Course")
 
-           st.write("Course :", data.get("other_course_name",""))
-           st.write("Institute :", data.get("other_institute_name",""))
-           st.write("Completion Year :", data.get("other_course_completion_year",""))
-           st.write("Marks :", data.get("other_course_marks",""))
+       st.write("Course :", data.get("other_course_name",""))
+       st.write("Institute :", data.get("other_institute_name",""))
+       st.write("Completion Year :", data.get("other_course_completion_year",""))
+       st.write("Marks :", data.get("other_course_marks",""))
 
-           if fs.get("other_course_doc"):
-               st.success(f"✅ {fs['other_course_doc']['name']}")
-           elif saved.get("other_course_doc"):
-               st.markdown(f"📄 [View Certificate]({saved['other_course_doc']})")
-           else:
-               st.warning("Certificate Missing")
+       if fs.get("other_course_doc"):
+           st.success(f"✅ {fs['other_course_doc']['name']}")
+       elif saved.get("other_course_doc"):
+           st.markdown(f"📄 [View Certificate]({saved['other_course_doc']})")
+       else:
+           st.warning("Certificate Missing")
 
-           st.divider()
+       st.divider()
 
     if data.get("HasCompetitiveExam") == "Yes":
        st.markdown("### Competitive Exam")
