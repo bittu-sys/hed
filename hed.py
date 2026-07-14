@@ -963,7 +963,7 @@ EXPECTED_HEADERS = [
 
 def ensure_sheet_headers():
     """
-    Ensure header row in HHED_SUBMISSIONS_NEW has ALL expected columns.
+    Ensure header row in HED_SUBMISSIONS has ALL expected columns.
 
     Strategy:
     - Read current header row
@@ -972,10 +972,15 @@ def ensure_sheet_headers():
     This NEVER shifts existing columns — only adds new ones at the end.
     So existing data rows are never misaligned.
     """
-    result = sheet_service.spreadsheets().values().get(
-        spreadsheetId=SHEET_ID,
-        range=f"{SAVE_TAB}!1:1"
-    ).execute()
+    try:
+        result = sheet_service.spreadsheets().values().get(
+            spreadsheetId=SHEET_ID,
+            range=f"{SAVE_TAB}!1:1"
+        ).execute()
+    except Exception as e:
+        st.error(f"❌ Could not READ sheet headers: {e}")
+        st.stop()
+
     existing_headers = result.get("values", [[]])[0]
     existing_set     = {str(h).strip().lower() for h in existing_headers}
     existing_count   = len(existing_headers)
@@ -989,12 +994,28 @@ def ensure_sheet_headers():
     start_col_letter = col_index_to_letter(existing_count)
     range_notation   = f"{SAVE_TAB}!{start_col_letter}1"
 
-    sheet_service.spreadsheets().values().update(
-        spreadsheetId=SHEET_ID,
-        range=range_notation,
-        valueInputOption="RAW",
-        body={"values": [missing]}
-    ).execute()
+    try:
+        sheet_service.spreadsheets().values().update(
+            spreadsheetId=SHEET_ID,
+            range=range_notation,
+            valueInputOption="RAW",
+            body={"values": [missing]}
+        ).execute()
+    except Exception as e:
+        # This is almost always a PERMISSIONS problem: the service account
+        # can read the sheet but does not have Editor access to write to it.
+        # Share the Google Sheet with the service account's client_email
+        # (found in st.secrets["gcp_service_account"]["client_email"])
+        # as "Editor", not "Viewer".
+        service_email = st.secrets.get("gcp_service_account", {}).get("client_email", "unknown")
+        st.error(
+            f"❌ Could not UPDATE sheet headers.\n\n"
+            f"Real error: {e}\n\n"
+            f"👉 Most likely cause: the service account ({service_email}) "
+            f"only has VIEWER access to this Google Sheet. "
+            f"Share the sheet with this email as **Editor** and try again."
+        )
+        st.stop()
 
 
 def col_index_to_letter(index):
