@@ -27,7 +27,7 @@ def validate_file(uploaded_file):
 
 FOLDER_ID = "0AKQoF-VACGZsUk9PVA"
 SHEET_ID = "1An8HEEx-pDJso87QkZSlE5Ot3yW9sl-59k7XQwQ7iic"
-SAVE_TAB = "HED_SUBMISSIONS"
+SAVE_TAB = "HED_SUBMISSIONS_NEW"
 
 SCOPES = [
     'https://www.googleapis.com/auth/drive',
