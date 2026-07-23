@@ -1079,7 +1079,7 @@ def build_row_values(data_dict, folder_link, uploaded_links):
         data_dict.get("Email", ""),
 
         data_dict.get("CourseName", ""),
-        data_dict.get("CurrentLoanStatus", ""),
+        clean_value(data_dict.get("CurrentLoanStatus", "")),
 
         data_dict.get("TrancheNumber", ""),
         data_dict.get("SanctionLoanAmount", ""),
@@ -1550,7 +1550,14 @@ if st.session_state.step == 1:
     sanction_loan_amount = st.text_input("Sanction Loan Amount", st.session_state.student_data.get("SanctionLoanAmount", ""))
     disbursement_tranche_amount = st.text_input("Disbursement / Tranche Amount", st.session_state.student_data.get("DisbursementTrancheAmount", ""))
     course_name         = st.text_input("Course Name",         st.session_state.student_data.get("CourseName", ""))
-    current_loan_status = st.text_input("Current Loan Status", st.session_state.student_data.get("CurrentLoanStatus", ""))
+    loan_status_options = ["Select", "APPROVED", "DISBURSED"]
+    current_loan_status_val = st.session_state.student_data.get("CurrentLoanStatus", "Select")
+    current_loan_status = st.selectbox(
+        "Current Loan Status",
+        loan_status_options,
+        index=loan_status_options.index(current_loan_status_val)
+                if current_loan_status_val in loan_status_options else 0
+    )
 
     st.session_state.student_data.update({
         "Application_ID":    app_id,
